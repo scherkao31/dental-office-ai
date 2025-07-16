@@ -5457,43 +5457,33 @@ class FinanceManager {
     renderDashboard() {
         if (!this.dashboardData) return;
 
-        const summary = this.dashboardData.summary;
+        // Calculate summary from the data
+        const revenue = this.dashboardData.revenue;
+        const collectionRate = revenue.total > 0 ? (revenue.paid / revenue.total) * 100 : 0;
         
         // Update metrics
-        document.getElementById('current-month-revenue').textContent = `${summary.current_month_revenue.toFixed(2)} CHF`;
-        document.getElementById('pending-payments').textContent = `${summary.total_pending.toFixed(2)} CHF`;
-        document.getElementById('collection-rate').textContent = `${summary.collection_rate.toFixed(1)}%`;
+        document.getElementById('current-month-revenue').textContent = `${revenue.total.toFixed(2)} CHF`;
+        document.getElementById('pending-payments').textContent = `${revenue.pending.toFixed(2)} CHF`;
+        document.getElementById('collection-rate').textContent = `${collectionRate.toFixed(1)}%`;
         
-        // Update revenue change
+        // Update revenue change (set to 0 for now as we don't have previous month data)
         const revenueChange = document.getElementById('revenue-change');
-        if (summary.growth_rate > 0) {
-            revenueChange.textContent = `+${summary.growth_rate.toFixed(1)}%`;
-            revenueChange.style.color = '#28a745';
-        } else if (summary.growth_rate < 0) {
-            revenueChange.textContent = `${summary.growth_rate.toFixed(1)}%`;
-            revenueChange.style.color = '#dc3545';
-        } else {
-            revenueChange.textContent = '0%';
-            revenueChange.style.color = '#6c757d';
-        }
-
-        // Update top patient
-        const topPatients = this.dashboardData.top_patients;
-        if (topPatients.length > 0) {
-            const topPatient = topPatients[0];
-            document.getElementById('top-patient-value').textContent = `${topPatient.total_spent.toFixed(2)} CHF`;
-            document.getElementById('top-patient-name').textContent = topPatient.patient_name;
-        }
+        revenueChange.textContent = '0%';
+        revenueChange.style.color = '#6c757d';
+        // Update top patient (set placeholder for now)
+        const topPatientValue = document.getElementById('top-patient-value');
+        const topPatientName = document.getElementById('top-patient-name');
+        if (topPatientValue) topPatientValue.textContent = '0.00 CHF';
+        if (topPatientName) topPatientName.textContent = 'Aucun patient';
 
         // Update pending count
-        const pendingCount = this.dashboardData.payment_status.find(s => s.status === 'pending')?.count || 0;
-        document.getElementById('pending-count').textContent = `${pendingCount} factures`;
+        const pendingCount = this.dashboardData.invoices.pending + this.dashboardData.invoices.partial;
+        const pendingCountEl = document.getElementById('pending-count');
+        if (pendingCountEl) pendingCountEl.textContent = `${pendingCount} factures`;
 
-        // Render charts
+        // Render charts with available data
         this.renderRevenueChart();
         this.renderPaymentStatusChart();
-        this.renderTreatmentsChart();
-        this.renderTopPatientsList();
     }
 
     renderRevenueChart() {
@@ -5504,12 +5494,10 @@ class FinanceManager {
             this.charts.revenue.destroy();
         }
 
-        const monthlyData = this.dashboardData.monthly_revenue;
-        const labels = monthlyData.map(item => {
-            const date = new Date(item.month + '-01');
-            return date.toLocaleDateString('fr-CH', { month: 'short', year: 'numeric' });
-        });
-        const revenues = monthlyData.map(item => item.revenue);
+        // Use current month data as a single point
+        const currentMonth = new Date().toLocaleDateString('fr-CH', { month: 'short', year: 'numeric' });
+        const labels = [currentMonth];
+        const revenues = [this.dashboardData.revenue.total];
 
         this.charts.revenue = new Chart(ctx, {
             type: 'line',
@@ -5559,16 +5547,10 @@ class FinanceManager {
             this.charts.paymentStatus.destroy();
         }
 
-        const statusData = this.dashboardData.payment_status;
-        const labels = statusData.map(item => {
-            switch (item.status) {
-                case 'pending': return 'En attente';
-                case 'partial': return 'Partiellement payé';
-                case 'paid': return 'Payé';
-                default: return item.status;
-            }
-        });
-        const amounts = statusData.map(item => item.amount);
+        // Use invoice status data
+        const revenue = this.dashboardData.revenue;
+        const labels = ['Payé', 'En attente'];
+        const amounts = [revenue.paid, revenue.pending];
 
         this.charts.paymentStatus = new Chart(ctx, {
             type: 'doughnut',
@@ -5597,16 +5579,8 @@ class FinanceManager {
     }
 
     renderTreatmentsChart() {
-        const ctx = document.getElementById('treatments-chart');
-        if (!ctx) return;
-
-        if (this.charts.treatments) {
-            this.charts.treatments.destroy();
-        }
-
-        const treatmentData = this.dashboardData.top_treatments.slice(0, 8);
-        const labels = treatmentData.map(item => item.treatment_name);
-        const revenues = treatmentData.map(item => item.total_revenue);
+        // Skip for now as we don't have treatment data
+        return;
 
         this.charts.treatments = new Chart(ctx, {
             type: 'bar',
@@ -5652,9 +5626,9 @@ class FinanceManager {
         const container = document.getElementById('top-patients-list');
         if (!container) return;
 
-        const topPatients = this.dashboardData.top_patients.slice(0, 10);
-        
-        container.innerHTML = topPatients.map(patient => `
+        // Skip for now as we don't have top patients data
+        container.innerHTML = '<div class="empty-state">Données patients non disponibles</div>';
+        return;
             <div class="patient-item">
                 <div class="patient-info">
                     <div class="patient-avatar">
