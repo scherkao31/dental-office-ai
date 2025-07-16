@@ -3782,7 +3782,7 @@ class DentalAISuite {
                 
                 // Refresh the current view
                 if (window.financeManager) {
-                    window.financeManager.loadInvoicesAndDevis();
+                    window.financeManager.loadInvoices();
                 }
                 
                 // Refresh patient view if open
@@ -3819,7 +3819,7 @@ class DentalAISuite {
                 
                 // Refresh the current view
                 if (window.financeManager) {
-                    window.financeManager.loadInvoicesAndDevis();
+                    window.financeManager.loadInvoices();
                 }
                 
                 // Refresh patient view if open
@@ -5781,9 +5781,9 @@ class FinanceManager {
                 </div>
                 <div class="devis-info">
                     <p><strong>Patient:</strong> ${devis.patient_name}</p>
-                    <p><strong>Date:</strong> ${new Date(devis.devis_date).toLocaleDateString('fr-FR')}</p>
-                    <p><strong>Valide jusqu'au:</strong> ${new Date(devis.valid_until).toLocaleDateString('fr-FR')}</p>
-                    <p><strong>Montant:</strong> ${devis.patient_amount_chf.toFixed(2)} CHF</p>
+                    <p><strong>Date:</strong> ${new Date(devis.issue_date).toLocaleDateString('fr-FR')}</p>
+                    <p><strong>Valide jusqu'au:</strong> ${new Date(devis.validity_date).toLocaleDateString('fr-FR')}</p>
+                    <p><strong>Montant:</strong> ${devis.total_amount.toFixed(2)} CHF</p>
                 </div>
                 <div class="devis-actions">
                     <button class="btn btn-sm btn-primary" onclick="window.dentalAI.showDevisDetails('${devis.id}')">
@@ -5814,10 +5814,10 @@ class FinanceManager {
             <tr>
                 <td>${invoice.invoice_number}</td>
                 <td>${invoice.patient_name}</td>
-                <td>${this.formatDate(invoice.invoice_date)}</td>
-                <td class="price-amount">${invoice.total_amount_chf.toFixed(2)} CHF</td>
-                <td class="price-amount">${invoice.lamal_amount_chf.toFixed(2)} CHF</td>
-                <td class="price-amount">${invoice.patient_amount_chf.toFixed(2)} CHF</td>
+                <td>${this.formatDate(invoice.issue_date)}</td>
+                <td class="price-amount">${invoice.total_amount.toFixed(2)} CHF</td>
+                <td class="price-amount">0.00 CHF</td>
+                <td class="price-amount">${invoice.total_amount.toFixed(2)} CHF</td>
                 <td><span class="invoice-status ${invoice.status}">${this.getStatusText(invoice.status)}</span></td>
                 <td>
                     <button class="btn btn-sm btn-secondary" onclick="financeManager.viewInvoice('${invoice.id}')">
@@ -5907,24 +5907,22 @@ class FinanceManager {
         tbody.innerHTML = this.pricing.map(item => `
             <tr>
                 <td><strong>${item.tarmed_code}</strong></td>
-                <td>${item.treatment_name}</td>
-                <td><span class="pricing-category">${item.treatment_category}</span></td>
-                <td class="price-amount">${item.base_price_chf.toFixed(2)} CHF</td>
-                <td class="${item.lamal_covered ? 'lamal-covered' : 'lamal-not-covered'}">
-                    ${item.lamal_covered ? 'Oui' : 'Non'}
-                </td>
-                <td>${item.lamal_covered ? item.lamal_percentage.toFixed(0) + '%' : '-'}</td>
-                <td>${item.duration_minutes} min</td>
-                <td>${item.description}</td>
+                <td>${item.description_fr}</td>
+                <td><span class="pricing-category">${item.category || 'Non catégorisé'}</span></td>
+                <td class="price-amount">${item.base_price.toFixed(2)} CHF</td>
+                <td class="lamal-not-covered">Non</td>
+                <td>-</td>
+                <td>-</td>
+                <td>${item.unit || ''}</td>
             </tr>
         `).join('');
     }
 
     searchPricing(term) {
         const filteredPricing = this.pricing.filter(item => 
-            item.treatment_name.toLowerCase().includes(term.toLowerCase()) ||
+            item.description_fr.toLowerCase().includes(term.toLowerCase()) ||
             item.tarmed_code.toLowerCase().includes(term.toLowerCase()) ||
-            item.treatment_category.toLowerCase().includes(term.toLowerCase())
+            (item.category && item.category.toLowerCase().includes(term.toLowerCase()))
         );
         
         this.renderFilteredPricing(filteredPricing);
@@ -5932,7 +5930,7 @@ class FinanceManager {
 
     filterPricingByCategory(category) {
         const filteredPricing = category ? 
-            this.pricing.filter(item => item.treatment_category === category) : 
+            this.pricing.filter(item => item.category === category) : 
             this.pricing;
         
         this.renderFilteredPricing(filteredPricing);
@@ -5945,15 +5943,13 @@ class FinanceManager {
         tbody.innerHTML = filteredPricing.map(item => `
             <tr>
                 <td><strong>${item.tarmed_code}</strong></td>
-                <td>${item.treatment_name}</td>
-                <td><span class="pricing-category">${item.treatment_category}</span></td>
-                <td class="price-amount">${item.base_price_chf.toFixed(2)} CHF</td>
-                <td class="${item.lamal_covered ? 'lamal-covered' : 'lamal-not-covered'}">
-                    ${item.lamal_covered ? 'Oui' : 'Non'}
-                </td>
-                <td>${item.lamal_covered ? item.lamal_percentage.toFixed(0) + '%' : '-'}</td>
-                <td>${item.duration_minutes} min</td>
-                <td>${item.description}</td>
+                <td>${item.description_fr}</td>
+                <td><span class="pricing-category">${item.category || 'Non catégorisé'}</span></td>
+                <td class="price-amount">${item.base_price.toFixed(2)} CHF</td>
+                <td class="lamal-not-covered">Non</td>
+                <td>-</td>
+                <td>-</td>
+                <td>${item.unit || ''}</td>
             </tr>
         `).join('');
     }
@@ -6076,7 +6072,7 @@ class FinanceManager {
                 
                 // Refresh the current view
                 if (window.financeManager) {
-                    window.financeManager.loadInvoicesAndDevis();
+                    window.financeManager.loadInvoices();
                 }
                 
                 // Refresh patient view if open
@@ -6113,7 +6109,7 @@ class FinanceManager {
                 
                 // Refresh the current view
                 if (window.financeManager) {
-                    window.financeManager.loadInvoicesAndDevis();
+                    window.financeManager.loadInvoices();
                 }
                 
                 // Refresh patient view if open
