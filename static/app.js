@@ -3165,9 +3165,9 @@ class DentalAISuite {
         try {
             // Load financial data
             const [invoicesResponse, devisResponse, revenueResponse] = await Promise.all([
-                fetch('/api/invoices'),
-                fetch('/api/devis'),
-                fetch('/api/revenue-forecast')
+                fetch('/api/financial/invoices/'),
+                fetch('/api/financial/devis/'),
+                fetch('/api/financial/revenue-forecast')
             ]);
             
             const invoicesData = await invoicesResponse.json();
@@ -5439,14 +5439,14 @@ class FinanceManager {
 
     async loadDashboard() {
         try {
-            const response = await fetch('/api/financial-dashboard');
+            const response = await fetch('/api/financial/dashboard');
             const data = await response.json();
             
-            if (data.success) {
+            if (data.status === 'success') {
                 this.dashboardData = data.dashboard;
                 this.renderDashboard();
             } else {
-                throw new Error(data.error);
+                throw new Error(data.message);
             }
         } catch (error) {
             console.error('Error loading dashboard:', error);
@@ -5675,19 +5675,19 @@ class FinanceManager {
     async loadInvoices() {
         try {
             const [invoicesResponse, devisResponse] = await Promise.all([
-                fetch('/api/invoices'),
-                fetch('/api/devis')
+                fetch('/api/financial/invoices/'),
+                fetch('/api/financial/devis/')
             ]);
             
             const invoicesData = await invoicesResponse.json();
             const devisData = await devisResponse.json();
             
-            if (invoicesData.success && devisData.success) {
-                this.invoices = invoicesData.invoices;
-                this.devis = devisData.devis;
+            if (invoicesData.status === 'success' && devisData.status === 'success') {
+                this.invoices = invoicesData.invoices || [];
+                this.devis = devisData.devis || [];
                 this.renderInvoicesAndDevis();
             } else {
-                throw new Error(invoicesData.error || devisData.error);
+                throw new Error(invoicesData.message || devisData.message);
             }
         } catch (error) {
             console.error('Error loading invoices and devis:', error);
@@ -5885,14 +5885,14 @@ class FinanceManager {
 
     async loadPricing() {
         try {
-            const response = await fetch('/api/pricing');
+            const response = await fetch('/api/financial/pricing/');
             const data = await response.json();
             
-            if (data.success) {
+            if (data.status === 'success') {
                 this.pricing = data.pricing;
                 this.renderPricing();
             } else {
-                throw new Error(data.error);
+                throw new Error(data.message);
             }
         } catch (error) {
             console.error('Error loading pricing:', error);

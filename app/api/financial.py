@@ -7,12 +7,22 @@ financial_bp = Blueprint('financial', __name__)
 @financial_bp.route('/invoices', methods=['GET', 'POST'])
 def manage_invoices():
     """Manage invoices"""
+    from app.services import financial_service
+    if financial_service is None:
+        return jsonify({'status': 'error', 'message': 'Service not initialized'}), 500
+    
     if request.method == 'GET':
-        # TODO: Add filters for patient_id, date range, status
-        return jsonify({
-            'status': 'success',
-            'message': 'Invoice list endpoint - to be implemented'
-        })
+        try:
+            invoices = financial_service.get_all_invoices()
+            return jsonify({
+                'status': 'success',
+                'invoices': [inv.to_dict() for inv in invoices]
+            })
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            }), 400
     
     elif request.method == 'POST':
         try:
@@ -81,12 +91,22 @@ def download_invoice_pdf(invoice_id):
 @financial_bp.route('/devis', methods=['GET', 'POST'])
 def manage_devis():
     """Manage devis (quotes)"""
+    from app.services import financial_service
+    if financial_service is None:
+        return jsonify({'status': 'error', 'message': 'Service not initialized'}), 500
+    
     if request.method == 'GET':
-        # TODO: Add filters
-        return jsonify({
-            'status': 'success',
-            'message': 'Devis list endpoint - to be implemented'
-        })
+        try:
+            devis_list = financial_service.get_all_devis()
+            return jsonify({
+                'status': 'success',
+                'devis': [d.to_dict() for d in devis_list]
+            })
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            }), 400
     
     elif request.method == 'POST':
         try:
@@ -261,14 +281,17 @@ def get_revenue_forecast():
 @financial_bp.route('/pricing', methods=['GET'])
 def get_pricing():
     """Get dental pricing data"""
+    from app.services import financial_service
+    if financial_service is None:
+        return jsonify({'status': 'error', 'message': 'Service not initialized'}), 500
+    
     try:
         search_query = request.args.get('search')
         
         if search_query:
             pricing_list = financial_service.search_pricing(search_query)
         else:
-            # TODO: Get all pricing with pagination
-            pricing_list = []
+            pricing_list = financial_service.get_all_pricing()
         
         return jsonify({
             'status': 'success',

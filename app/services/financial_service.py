@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from app import db
+from sqlalchemy import or_
 from app.models import (
     Invoice, InvoiceItem, Payment, Devis, DevisItem, 
     PaymentPlan, ScheduledPayment, DentalPricing
@@ -316,3 +317,27 @@ class FinancialService:
             by_method[method]['amount'] += payment.amount
         
         return by_method
+    
+    def get_all_invoices(self) -> List[Invoice]:
+        """Get all invoices"""
+        return Invoice.query.order_by(Invoice.issue_date.desc()).all()
+    
+    def get_all_devis(self) -> List[Devis]:
+        """Get all devis (quotes)"""
+        return Devis.query.order_by(Devis.issue_date.desc()).all()
+    
+    def get_all_pricing(self) -> List[DentalPricing]:
+        """Get all pricing entries"""
+        return DentalPricing.query.filter_by(active=True).order_by(DentalPricing.tarmed_code).all()
+    
+    def search_pricing(self, search_query: str) -> List[DentalPricing]:
+        """Search pricing by code or description"""
+        search = f"%{search_query}%"
+        return DentalPricing.query.filter(
+            or_(
+                DentalPricing.tarmed_code.like(search),
+                DentalPricing.description_fr.like(search),
+                DentalPricing.category.like(search)
+            ),
+            DentalPricing.active == True
+        ).order_by(DentalPricing.tarmed_code).all()
