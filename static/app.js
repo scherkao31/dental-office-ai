@@ -2350,11 +2350,11 @@ class DentalAISuite {
     async showPatientSelectionModal(planId, treatmentData) {
         // Load patients list
         try {
-            const response = await fetch('/api/patients');
+            const response = await fetch('/api/patients/');
             const data = await response.json();
             
-            if (!data.success) {
-                throw new Error(data.error || 'Erreur lors du chargement des patients');
+            if (data.status !== 'success') {
+                throw new Error(data.message || 'Erreur lors du chargement des patients');
             }
 
             const patients = data.patients || [];
@@ -4124,14 +4124,14 @@ class PracticeManager {
 
     async loadPatients(searchTerm = '') {
         try {
-            const response = await fetch(`/api/patients?search=${encodeURIComponent(searchTerm)}`);
+            const response = await fetch(`/api/patients/?search=${encodeURIComponent(searchTerm)}`);
             const data = await response.json();
             
-            if (data.success) {
+            if (data.status === 'success') {
                 this.patients = data.patients;
                 this.renderPatients();
             } else {
-                console.error('Failed to load patients:', data.error);
+                console.error('Failed to load patients:', data.message);
             }
         } catch (error) {
             console.error('Error loading patients:', error);
@@ -4471,15 +4471,15 @@ class PracticeManager {
     async loadSchedule() {
         try {
             const weekStart = this.formatDate(this.currentWeekStart);
-            const response = await fetch(`/api/appointments?week_start=${weekStart}`);
+            const response = await fetch(`/api/appointments/?week_start=${weekStart}`);
             const data = await response.json();
 
-            if (data.success) {
+            if (data.status === 'success') {
                 this.appointments = data.appointments;
                 this.renderSchedule();
                 this.updateWeekDisplay();
             } else {
-                console.error('Failed to load schedule:', data.error);
+                console.error('Failed to load schedule:', data.message);
             }
         } catch (error) {
             console.error('Error loading schedule:', error);
