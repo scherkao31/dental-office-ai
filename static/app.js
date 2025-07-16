@@ -3165,8 +3165,8 @@ class DentalAISuite {
         try {
             // Load financial data
             const [invoicesResponse, devisResponse, revenueResponse] = await Promise.all([
-                fetch('/api/financial/invoices/'),
-                fetch('/api/financial/devis/'),
+                fetch('/api/financial/invoices'),
+                fetch('/api/financial/devis'),
                 fetch('/api/financial/revenue-forecast')
             ]);
             
@@ -5675,8 +5675,8 @@ class FinanceManager {
     async loadInvoices() {
         try {
             const [invoicesResponse, devisResponse] = await Promise.all([
-                fetch('/api/financial/invoices/'),
-                fetch('/api/financial/devis/')
+                fetch('/api/financial/invoices'),
+                fetch('/api/financial/devis')
             ]);
             
             const invoicesData = await invoicesResponse.json();
@@ -5885,7 +5885,7 @@ class FinanceManager {
 
     async loadPricing() {
         try {
-            const response = await fetch('/api/financial/pricing/');
+            const response = await fetch('/api/financial/pricing');
             const data = await response.json();
             
             if (data.status === 'success') {
