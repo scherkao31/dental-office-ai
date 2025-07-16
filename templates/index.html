@@ -886,6 +886,22 @@
 
     <!-- Include Chart.js for financial charts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- New modular architecture scripts -->
+    <!-- Core modules -->
+    <script src="{{ url_for('static', filename='js/core/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/utils.js') }}"></script>
+    
+    <!-- Feature modules -->
+    <script src="{{ url_for('static', filename='js/features/dental-brain/dental-brain.js') }}"></script>
+    
+    <!-- App loader for gradual migration -->
+    <script src="{{ url_for('static', filename='js/app-loader.js') }}"></script>
+    
+    <!-- Original app.js (kept for backward compatibility) -->
     <script src="{{ url_for('static', filename='app.js') }}"></script>
+    
+    <!-- Temporary test script -->
+    <script src="{{ url_for('static', filename='js/test-modules.js') }}"></script>
 </body>
 </html> 
