@@ -206,6 +206,10 @@ def manage_payment_plans():
 @financial_bp.route('/dashboard', methods=['GET'])
 def get_financial_dashboard():
     """Get financial dashboard data"""
+    from app.services import financial_service
+    if financial_service is None:
+        return jsonify({'status': 'error', 'message': 'Service not initialized'}), 500
+    
     try:
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
@@ -219,7 +223,7 @@ def get_financial_dashboard():
         if not end_date:
             # Default to end of current month
             next_month = start_date.replace(day=28) + timedelta(days=4)
-            end_date = (next_month - timedelta(days=next_month.day)).date()
+            end_date = next_month - timedelta(days=next_month.day)
         else:
             end_date = datetime.fromisoformat(end_date).date()
         
