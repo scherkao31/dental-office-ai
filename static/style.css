@@ -8198,6 +8198,100 @@ textarea.form-control {
     color: #6c757d;
 }
 
+/* Treatment Results Styles */
+.treatment-results-container {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.treatment-results-container h4 {
+    color: #1e40af;
+    margin-bottom: 25px;
+    font-size: 1.4rem;
+    text-align: center;
+}
+
+.treatments-by-tooth {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.tooth-treatments-result {
+    background: #f8fafc;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.tooth-treatments-result h5 {
+    color: #1e40af;
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.treatment-results-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.treatment-result {
+    padding: 8px 0;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.treatment-result.success {
+    color: #059669;
+}
+
+.treatment-result.error {
+    color: #dc2626;
+}
+
+.treatment-result .error-message {
+    display: block;
+    margin-top: 4px;
+    margin-left: 24px;
+    color: #991b1b;
+    font-size: 0.85rem;
+}
+
+#treatment-results {
+    margin-top: 30px;
+}
+
+#download-section {
+    margin-top: 20px;
+    text-align: center;
+}
+
+#download-ppt-btn {
+    background: #10b981;
+    color: white;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+#download-ppt-btn:hover {
+    background: #059669;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
 .reference-type i {
     font-size: 0.9rem;
 }
@@ -9433,37 +9527,15 @@ textarea.form-control {
     transition: all 0.2s ease;
 }
 
-/* Hour-based appointment cells */
-#schedule-grid.enhanced .hour-cell {
-    min-height: 60px;
-    height: auto;
-    position: relative;
-    border: 1px solid #e2e8f0;
+/* Schedule cells */
+#schedule-grid.enhanced .schedule-cell {
+    background: white;
     padding: 2px;
-    background: #ffffff;
-    overflow: visible;
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+    min-height: 60px;
 }
 
-/* Container for multiple appointments within an hour */
-.appointments-container {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    width: 100%;
-    pointer-events: none; /* Allow drops to pass through to the cell */
-}
-
-.appointments-container .appointment {
-    pointer-events: auto; /* But appointments themselves are interactive */
-}
-
-/* Appointments should stack vertically and maintain full width */
-.appointments-container .appointment {
-    width: 100% !important;
-    max-width: 100% !important;
-    flex: none !important;
-    margin: 1px 0;
-}
 
 #schedule-grid.enhanced .appointment-cell:last-child {
     border-right: none;
@@ -9489,110 +9561,58 @@ textarea.form-control {
     border: 1px solid #93c5fd;
 }
 
-/* Enhanced Appointment Blocks */
-#schedule-grid.enhanced .appointment {
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+/* Appointment Blocks - matching original working version */
+.appointment-block {
+    background: #3b82f6;
     color: white;
-    border-radius: 8px;
-    padding: 8px 10px;
-    margin: 2px 0;
-    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 6px;
     font-size: 11px;
-    line-height: 1.3;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
-    transition: all 0.2s ease;
-    position: relative;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Proportional appointments - fixed heights based on duration */
-#schedule-grid.enhanced .appointment.proportional {
-    position: relative;
-    width: 100%;
-    margin: 0;
-    z-index: 10;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-sizing: border-box;
-}
-
-/* Height-based styling for appointments */
-#schedule-grid.enhanced .appointment.proportional {
-    /* Default styling - will be overridden by inline styles */
-    padding: 4px 8px;
-    font-size: 11px;
+    cursor: move;
+    min-height: 45px;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
+    margin-bottom: 2px;
+    position: relative;
 }
 
-/* Very short appointments (15 minutes) */
-#schedule-grid.enhanced .appointment.proportional[style*="height: 15px"] {
-    padding: 2px 4px;
-    font-size: 9px;
-}
-
-#schedule-grid.enhanced .appointment.proportional[style*="height: 15px"] .appointment-patient,
-#schedule-grid.enhanced .appointment.proportional[style*="height: 15px"] .appointment-type,
-#schedule-grid.enhanced .appointment.proportional[style*="height: 15px"] .appointment-duration {
-    display: none;
-}
-
-/* Short appointments (30 minutes) */
-#schedule-grid.enhanced .appointment.proportional[style*="height: 30px"] {
-    padding: 3px 6px;
-    font-size: 10px;
-}
-
-#schedule-grid.enhanced .appointment.proportional[style*="height: 30px"] .appointment-duration {
-    display: none;
-}
-
-/* Medium appointments (45 minutes) */
-#schedule-grid.enhanced .appointment.proportional[style*="height: 45px"] {
-    padding: 5px 8px;
-    font-size: 11px;
-}
-
-/* Long appointments (60+ minutes) */
-#schedule-grid.enhanced .appointment.proportional[style*="height: 60px"],
-#schedule-grid.enhanced .appointment.proportional[style*="height: 90px"],
-#schedule-grid.enhanced .appointment.proportional[style*="height: 120px"] {
-    padding: 8px 10px;
-    font-size: 12px;
-}
-
-/* Compact styling for short appointments */
-#schedule-grid.enhanced .appointment.proportional[style*="height: 15px"] {
+/* Duration-based heights */
+.appointment-block[data-duration="15"] {
+    min-height: 20px;
+    max-height: 20px;
     padding: 2px 6px;
     font-size: 10px;
 }
 
-#schedule-grid.enhanced .appointment.proportional[style*="height: 15px"] .appointment-patient,
-#schedule-grid.enhanced .appointment.proportional[style*="height: 15px"] .appointment-type {
-    display: none; /* Hide details for very short appointments */
+.appointment-block[data-duration="30"] {
+    min-height: 30px;
+    max-height: 30px;
+    padding: 4px 6px;
 }
 
-/* Medium appointments */
-#schedule-grid.enhanced .appointment.proportional[style*="height: 30px"] {
-    padding: 4px 8px;
-    font-size: 10px;
+.appointment-block[data-duration="45"] {
+    min-height: 45px;
+    max-height: 45px;
 }
 
-#schedule-grid.enhanced .appointment.proportional[style*="height: 30px"] .appointment-type {
-    font-size: 9px;
+.appointment-block[data-duration="60"] {
+    min-height: 60px;
+    max-height: 60px;
 }
+
 
 /* Duration display for all appointments */
 .appointment-duration {
-    font-size: 9px;
-    opacity: 0.8;
+    font-size: 8px;
+    opacity: 0.6;
     position: absolute;
-    bottom: 2px;
-    right: 4px;
-    background: rgba(0, 0, 0, 0.2);
-    padding: 1px 3px;
+    bottom: 1px;
+    right: 2px;
+    background: rgba(0, 0, 0, 0.1);
+    padding: 0px 2px;
     border-radius: 2px;
+    line-height: 1;
 }
 
 /* Ensure appointments have proper text overflow */
@@ -9603,11 +9623,6 @@ textarea.form-control {
     line-height: 1.3;
 }
 
-/* Hour cells should expand to fit content */
-#schedule-grid.enhanced .hour-cell {
-    min-height: 60px !important;
-    height: auto !important;
-}
 
 #schedule-grid.enhanced .appointment:hover {
     transform: translateY(-2px);
@@ -9859,5 +9874,94 @@ textarea.form-control {
         grid-template-columns: 1fr;
         gap: 12px;
     }
+}
+
+/* === PATIENT VIEW STYLES === */
+
+.patient-view {
+    padding: 20px;
+}
+
+.patient-view-header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.patient-view-header h2 {
+    margin: 0;
+    color: #1e293b;
+    font-size: 28px;
+}
+
+.patient-view-header .patient-id {
+    color: #64748b;
+    font-size: 14px;
+    margin-top: 5px;
+}
+
+.patient-view-body {
+    display: grid;
+    gap: 30px;
+}
+
+.patient-section {
+    background: #f8fafc;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.patient-section h3 {
+    margin: 0 0 20px 0;
+    color: #1e293b;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.patient-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.patient-info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.patient-info-item label {
+    font-size: 12px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.patient-info-item p {
+    margin: 0;
+    color: #1e293b;
+    font-size: 16px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #94a3b8;
+}
+
+.empty-state i {
+    font-size: 48px;
+    margin-bottom: 10px;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin: 0;
+    font-size: 14px;
 }
 

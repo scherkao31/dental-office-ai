@@ -12,7 +12,17 @@ class PowerPointService:
     
     def generate_treatment_presentation(self, treatment_data: Dict, dental_schema: Optional[Dict] = None) -> str:
         """Generate PowerPoint presentation for treatment plan"""
-        prs = Presentation()
+        # Try to use template if it exists
+        template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'plan.pptx')
+        
+        if os.path.exists(template_path):
+            try:
+                prs = Presentation(template_path)
+            except Exception as e:
+                print(f"Could not load template: {e}")
+                prs = Presentation()
+        else:
+            prs = Presentation()
         
         # Title slide
         self._add_title_slide(prs, treatment_data['patient_name'])
@@ -133,36 +143,40 @@ class PowerPointService:
     
     def _add_sequence_slide(self, prs: Presentation, sequence: Dict):
         """Add slide for treatment sequence"""
-        slide_layout = prs.slide_layouts[1]  # Title and content layout
-        slide = prs.slides.add_slide(slide_layout)
-        
-        title = slide.shapes.title
-        title.text = f"Séquence {sequence['sequence']}: {sequence['title']}"
-        
-        # Add treatments
-        content_placeholder = slide.placeholders[1]
-        tf = content_placeholder.text_frame
-        
-        for treatment in sequence.get('treatments', []):
-            p = tf.add_paragraph()
-            p.text = treatment['description']
-            p.level = 0
+        try:
+            slide_layout = prs.slide_layouts[1]  # Title and content layout
+            slide = prs.slides.add_slide(slide_layout)
             
-            # Add details as sub-bullets
-            if 'duration' in treatment:
-                p = tf.add_paragraph()
-                p.text = f"Durée: {treatment['duration']}"
-                p.level = 1
+            title = slide.shapes.title
+            title.text = f"Séquence {sequence.get('sequence', 1)}: {sequence.get('title', 'Traitement')}"
             
-            if 'cost' in treatment:
-                p = tf.add_paragraph()
-                p.text = f"Coût: {treatment['cost']} CHF"
-                p.level = 1
+            # Add treatments
+            content_placeholder = slide.placeholders[1]
+            tf = content_placeholder.text_frame
             
-            if 'notes' in treatment:
+            for treatment in sequence.get('treatments', []):
                 p = tf.add_paragraph()
-                p.text = f"Notes: {treatment['notes']}"
-                p.level = 1
+                p.text = treatment.get('description', 'Traitement')
+                p.level = 0
+                
+                # Add details as sub-bullets
+                if 'duration' in treatment:
+                    p = tf.add_paragraph()
+                    p.text = f"Durée: {treatment['duration']}"
+                    p.level = 1
+                
+                if 'cost' in treatment:
+                    p = tf.add_paragraph()
+                    p.text = f"Coût: {treatment['cost']} CHF"
+                    p.level = 1
+                
+                if 'notes' in treatment:
+                    p = tf.add_paragraph()
+                    p.text = f"Notes: {treatment['notes']}"
+                    p.level = 1
+        except Exception as e:
+            print(f"Error adding sequence slide: {e}")
+            # Continue anyway - don't fail the whole presentation
     
     def _add_cost_summary_slide(self, prs: Presentation, treatment_data: Dict):
         """Add cost summary slide"""

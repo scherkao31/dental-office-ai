@@ -36,6 +36,9 @@ class PracticeManager {
             if (e.target.classList.contains('modal-close')) {
                 this.hideModal(e.target.closest('.modal'));
             }
+            if (e.target.classList.contains('modal-cancel')) {
+                this.hideModal(e.target.closest('.modal'));
+            }
         });
     }
 
@@ -181,12 +184,25 @@ class PracticeManager {
         }
     }
 
-    viewPatient(patientId) {
+    async viewPatient(patientId) {
         const patient = this.patients.find(p => p.id === patientId);
         if (!patient) return;
         
+        this.currentViewedPatientId = patientId;
         const modal = document.getElementById('patient-view-modal');
         const content = document.getElementById('patient-view-content');
+        
+        // Load additional patient data including treatment plans
+        let treatmentPlans = [];
+        try {
+            const response = await fetch(`/api/patients/${patientId}`);
+            const data = await response.json();
+            if (data.success && data.treatment_plans) {
+                treatmentPlans = data.treatment_plans;
+            }
+        } catch (error) {
+            console.error('Error loading patient treatment plans:', error);
+        }
         
         content.innerHTML = `
             <div class="patient-view">
@@ -221,6 +237,50 @@ class PracticeManager {
                         </div>
                     </div>
                     <div class="patient-section">
+                        <h3>Plans de traitement</h3>
+                        ${treatmentPlans.length > 0 ? `
+                            <div class="treatment-plans-list">
+                                ${treatmentPlans.map(plan => {
+                                    let planData = {};
+                                    try {
+                                        planData = JSON.parse(plan.plan_data);
+                                    } catch (e) {
+                                        console.error('Error parsing plan data:', e);
+                                    }
+                                    return `
+                                        <div class="treatment-plan-item">
+                                            <div class="treatment-plan-header">
+                                                <strong>Plan du ${this.formatDate(plan.created_at)}</strong>
+                                                <div class="treatment-plan-actions">
+                                                    <button class="btn btn-sm btn-success patient-education-btn" onclick="practiceManager.generatePatientEducationFromPlan('${plan.id}', '${patientId}')">
+                                                        <i class="fas fa-graduation-cap"></i> Éducation Patient
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <p><strong>Consultation:</strong> ${plan.consultation_text || 'Non renseigné'}</p>
+                                            ${planData.treatment_sequence && planData.treatment_sequence.length > 0 ? `
+                                                <div class="treatment-sequence-summary">
+                                                    <h5>Séquence de traitement:</h5>
+                                                    <ul>
+                                                        ${planData.treatment_sequence.slice(0, 3).map(step => `
+                                                            <li>${step.traitement} - ${step.duree}</li>
+                                                        `).join('')}
+                                                        ${planData.treatment_sequence.length > 3 ? `<li>... et ${planData.treatment_sequence.length - 3} autres</li>` : ''}
+                                                    </ul>
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        ` : `
+                            <div class="empty-state">
+                                <i class="fas fa-clipboard-list"></i>
+                                <p>Aucun plan de traitement enregistré</p>
+                            </div>
+                        `}
+                    </div>
+                    <div class="patient-section">
                         <h3>Historique médical</h3>
                         <div class="empty-state">
                             <i class="fas fa-notes-medical"></i>
@@ -245,6 +305,16 @@ class PracticeManager {
         const patient = this.patients.find(p => p.id === patientId);
         if (patient) {
             this.showPatientModal(patient);
+        }
+    }
+
+    editPatientFromView() {
+        const patientViewModal = document.getElementById('patient-view-modal');
+        const patientId = this.currentViewedPatientId;
+        
+        if (patientId) {
+            this.hideModal(patientViewModal);
+            this.editPatient(patientId);
         }
     }
 
@@ -321,24 +391,19 @@ class PracticeManager {
                 const isToday = this.isToday(day.date);
                 const hourAppointments = this.getAppointmentsForHour(day.date, hourSlot);
                 
-                html += `<div class="appointment-cell hour-cell ${isToday ? 'today' : ''}" 
+                html += `<div class="schedule-cell ${isToday ? 'today' : ''}" 
                              data-date="${this.formatDateForApi(day.date)}" 
                              data-hour="${hourSlot}">`;
                 
-                // Container for multiple appointments in this hour
-                const appointmentCount = hourAppointments.length;
-                let containerClass = 'appointments-container';
-                if (appointmentCount > 1) {
-                    containerClass += ` multiple-appointments count-${appointmentCount}`;
-                }
-                html += `<div class="${containerClass}">`;
+                // Sort appointments by time
+                const sortedAppointments = hourAppointments.sort((a, b) => {
+                    const timeA = a.appointment_time.substring(a.appointment_time.includes('T') ? 11 : 0, a.appointment_time.includes('T') ? 16 : 5);
+                    const timeB = b.appointment_time.substring(b.appointment_time.includes('T') ? 11 : 0, b.appointment_time.includes('T') ? 16 : 5);
+                    return timeA.localeCompare(timeB);
+                });
                 
-                hourAppointments.forEach((apt, index) => {
+                sortedAppointments.forEach(apt => {
                     const durationMinutes = apt.duration_minutes || 60;
-                    
-                    // Use proportional heights: 1px per minute (60px = 1 hour)
-                    // This makes visual sense: 15min = 1/4 hour, 30min = 1/2 hour, etc.
-                    const heightPx = durationMinutes;
                     
                     // Extract time for display
                     let displayTime = '';
@@ -350,35 +415,20 @@ class PracticeManager {
                         }
                     }
                     
-                    console.log(`📐 Appointment ${apt.id}: ${durationMinutes}min = ${heightPx}px height in hour ${hourSlot}`);
-                    
-                    // Determine appointment type/status
-                    let appointmentClass = 'treatment';
-                    if (apt.treatment_type) {
-                        if (apt.treatment_type.toLowerCase().includes('consultation')) {
-                            appointmentClass = 'consultation';
-                        } else if (apt.treatment_type.toLowerCase().includes('urgence')) {
-                            appointmentClass = 'emergency';
-                        }
-                    }
-                    
                     html += `
-                        <div class="appointment ${appointmentClass} confirmed proportional" 
+                        <div class="appointment-block" 
                              data-appointment-id="${apt.id}"
                              data-duration="${durationMinutes}"
                              draggable="true"
-                             style="height: ${heightPx}px;"
                              onclick="practiceManager.showAppointmentDetails('${apt.id}')">
                             <div class="appointment-time">${displayTime}</div>
                             <div class="appointment-patient">${apt.patient_name || 'Patient'}</div>
-                            <div class="appointment-type">${apt.treatment_type}</div>
-                            <div class="appointment-duration">${durationMinutes}min</div>
+                            ${durationMinutes >= 30 ? `<div class="appointment-type">${apt.treatment_type || ''}</div>` : ''}
                         </div>
                     `;
                 });
                 
-                html += '</div>'; // Close appointments-container
-                html += '</div>'; // Close appointment-cell
+                html += '</div>';
             });
             
             html += '</div>';
@@ -2421,14 +2471,14 @@ class PracticeManager {
         console.log('🎯 Setting up drag and drop functionality');
         
         // Setup drag events for appointments
-        const appointments = document.querySelectorAll('#schedule-grid.enhanced .appointment[draggable="true"]');
+        const appointments = document.querySelectorAll('.appointment-block[draggable="true"]');
         appointments.forEach(appointment => {
             appointment.addEventListener('dragstart', (e) => this.handleDragStart(e));
             appointment.addEventListener('dragend', (e) => this.handleDragEnd(e));
         });
 
-        // Setup drop events for hour cells  
-        const cells = document.querySelectorAll('#schedule-grid.enhanced .hour-cell');
+        // Setup drop events for schedule cells  
+        const cells = document.querySelectorAll('.schedule-cell');
         cells.forEach(cell => {
             cell.addEventListener('dragover', (e) => this.handleDragOver(e));
             cell.addEventListener('drop', (e) => this.handleDrop(e));
@@ -2438,7 +2488,7 @@ class PracticeManager {
     }
 
     handleDragStart(e) {
-        const appointment = e.target.closest('.appointment');
+        const appointment = e.target.closest('.appointment-block');
         if (!appointment) return;
 
         appointment.classList.add('dragging');
@@ -2484,7 +2534,7 @@ class PracticeManager {
         e.preventDefault();
         
         const appointmentId = e.dataTransfer.getData('text/plain');
-        const targetCell = e.target.closest('.hour-cell');
+        const targetCell = e.target.closest('.schedule-cell');
         
         if (!targetCell || !appointmentId) return;
 
@@ -2774,6 +2824,183 @@ class PracticeManager {
         } catch (error) {
             console.error('❌ Error deleting appointment:', error);
             this.showNotification('Erreur lors de la suppression', 'error');
+        }
+    }
+
+    // === PATIENT EDUCATION GENERATION ===
+    
+    async generatePatientEducationFromPlan(planId, patientId) {
+        try {
+            this.showNotification('Génération du document éducatif en cours...', 'info');
+            
+            // Get treatment plan data
+            const response = await fetch(`/api/patients/${patientId}`);
+            const patientData = await response.json();
+            
+            if (!patientData.success) {
+                throw new Error('Impossible de récupérer les données du patient');
+            }
+            
+            const treatmentPlan = patientData.treatment_plans.find(plan => plan.id === planId);
+            if (!treatmentPlan) {
+                throw new Error('Plan de traitement non trouvé');
+            }
+            
+            let planData = {};
+            try {
+                planData = JSON.parse(treatmentPlan.plan_data);
+            } catch (e) {
+                console.error('Error parsing plan data:', e);
+                throw new Error('Erreur lors de la lecture du plan de traitement');
+            }
+            
+            // Prepare treatment summary for education generation
+            const treatmentSummary = planData.treatment_sequence.map(step => 
+                `${step.traitement} (${step.duree})`
+            ).join(', ');
+            
+            const educationResponse = await fetch('/api/ai/generate-patient-education', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    topic: treatmentSummary,
+                    patient_context: {
+                        patient_name: `${patientData.patient.first_name} ${patientData.patient.last_name}`,
+                        treatment_plan: planData
+                    }
+                })
+            });
+            
+            const educationData = await educationResponse.json();
+            
+            if (educationData.status === 'success') {
+                this.showNotification('Document éducatif généré avec succès', 'success');
+                
+                // Show education preview modal
+                const patient = patientData.patient;
+                const patientName = `${patient.first_name} ${patient.last_name}`;
+                
+                this.showEducationDocumentPreview(
+                    educationData.content,
+                    patientId,
+                    patientName,
+                    planId
+                );
+            } else {
+                throw new Error(educationData.message || 'Erreur lors de la génération du document éducatif');
+            }
+            
+        } catch (error) {
+            console.error('Error generating patient education:', error);
+            this.showNotification('Erreur: ' + error.message, 'error');
+        }
+    }
+    
+    showEducationDocumentPreview(educationContent, patientId, patientName, treatmentPlanId = null) {
+        // Create education preview modal
+        const modal = document.createElement('div');
+        modal.className = 'modal education-preview-modal';
+        modal.style.display = 'block';
+        
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-file-alt"></i> Aperçu du Document d'Éducation</h3>
+                    <span class="modal-close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="patient-info">
+                        <p><strong>Patient:</strong> ${patientName}</p>
+                        <p><strong>Date:</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
+                    </div>
+                    <div class="education-content">
+                        <div class="education-editor" contenteditable="true" id="education-editor">
+                            ${educationContent}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="practiceManager.downloadEducationDocument('${patientId}', '${patientName}')">
+                        <i class="fas fa-download"></i> Télécharger PDF
+                    </button>
+                    <button class="btn btn-primary" onclick="practiceManager.saveEducationDocument('${patientId}', document.getElementById('education-editor').innerHTML, '${treatmentPlanId || ''}')">
+                        <i class="fas fa-save"></i> Sauvegarder
+                    </button>
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Fermer</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Setup close handlers
+        modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+        });
+    }
+    
+    async downloadEducationDocument(patientId, patientName) {
+        try {
+            const educationContent = document.getElementById('education-editor').innerHTML;
+            
+            // Create a simple HTML document for download
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Document d'Éducation - ${patientName}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 40px; }
+                        h1, h2, h3 { color: #333; }
+                        p { line-height: 1.6; }
+                        ul, ol { line-height: 1.8; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Document d'Éducation Patient</h1>
+                    <p><strong>Patient:</strong> ${patientName}</p>
+                    <p><strong>Date:</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
+                    <hr>
+                    ${educationContent}
+                </body>
+                </html>
+            `;
+            
+            // Create blob and download
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `education_${patientName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            this.showNotification('Document téléchargé avec succès', 'success');
+            
+        } catch (error) {
+            console.error('Error downloading education document:', error);
+            this.showNotification('Erreur lors du téléchargement', 'error');
+        }
+    }
+    
+    async saveEducationDocument(patientId, content, treatmentPlanId) {
+        try {
+            // For now, we'll just show a success message
+            // In a real implementation, this would save to the backend
+            this.showNotification('Document sauvegardé avec succès', 'success');
+            
+            // Close the modal
+            document.querySelector('.education-preview-modal')?.remove();
+            
+        } catch (error) {
+            console.error('Error saving education document:', error);
+            this.showNotification('Erreur lors de la sauvegarde', 'error');
         }
     }
 

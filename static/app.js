@@ -6803,17 +6803,157 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Global Dental Schema Functions (called from HTML)
 function setTreatmentExample(text) {
-    // Set example text in the dental brain input
-    const dentalBrainInput = document.getElementById('chat-input-dental-brain');
-    if (dentalBrainInput) {
-        dentalBrainInput.value = text;
-        dentalBrainInput.focus();
+    // Set example text in the treatment input
+    const treatmentInput = document.getElementById('treatment-input');
+    if (treatmentInput) {
+        treatmentInput.value = text;
+        treatmentInput.focus();
     }
 }
 
-function processTreatmentPlan() {
-    // Trigger treatment plan processing in the dental brain
-    if (window.dentalAI && typeof window.dentalAI.sendMessage === 'function') {
-        window.dentalAI.sendMessage('dental-brain');
+async function processTreatmentPlan() {
+    const treatmentInput = document.getElementById('treatment-input');
+    const text = treatmentInput?.value?.trim();
+    
+    if (!text) {
+        showTreatmentError('Veuillez saisir un plan de traitement');
+        return;
+    }
+    
+    // Show loading state
+    setTreatmentLoadingState(true);
+    hideTreatmentResults();
+    hideTreatmentError();
+    
+    try {
+        // Call the PowerPoint generation API
+        const response = await fetch('/api/powerpoint/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                treatment_text: text
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            showTreatmentResults(data);
+        } else {
+            throw new Error(data.message || 'Erreur lors de la génération');
+        }
+    } catch (error) {
+        console.error('Error processing treatment:', error);
+        showTreatmentError(error.message || 'Erreur lors du traitement');
+    } finally {
+        setTreatmentLoadingState(false);
+    }
+}
+
+// Helper functions for dental schema
+function setTreatmentLoadingState(loading) {
+    const button = document.getElementById('process-treatment-btn');
+    const buttonText = document.getElementById('process-btn-text');
+    const buttonLoader = document.getElementById('process-btn-loader');
+    
+    if (button) {
+        button.disabled = loading;
+        if (buttonText) buttonText.style.display = loading ? 'none' : 'inline';
+        if (buttonLoader) buttonLoader.style.display = loading ? 'inline' : 'none';
+    }
+}
+
+function showTreatmentResults(data) {
+    const resultsSection = document.getElementById('treatment-results');
+    const resultsContent = document.getElementById('treatment-results-content');
+    const downloadSection = document.getElementById('download-section');
+    
+    if (resultsSection && resultsContent) {
+        // Display treatment processing results
+        let html = '<div class="treatment-results-container">';
+        html += '<h4>Résultats du traitement PowerPoint</h4>';
+        
+        if (data.treatments && data.treatments.length > 0) {
+            // Group treatments by tooth
+            const treatmentsByTooth = {};
+            data.treatments.forEach(result => {
+                if (!treatmentsByTooth[result.tooth]) {
+                    treatmentsByTooth[result.tooth] = [];
+                }
+                treatmentsByTooth[result.tooth].push(result);
+            });
+            
+            html += '<div class="treatments-by-tooth">';
+            Object.entries(treatmentsByTooth).forEach(([tooth, treatments]) => {
+                html += `
+                    <div class="tooth-treatments-result">
+                        <h5>Dent ${tooth}</h5>
+                        <ul class="treatment-results-list">
+                `;
+                
+                treatments.forEach(treatment => {
+                    const statusIcon = treatment.success ? '✅' : '❌';
+                    const statusClass = treatment.success ? 'success' : 'error';
+                    html += `
+                        <li class="treatment-result ${statusClass}">
+                            ${statusIcon} ${treatment.treatment}
+                            ${treatment.error ? `<small class="error-message">${treatment.error}</small>` : ''}
+                        </li>
+                    `;
+                });
+                
+                html += '</ul></div>';
+            });
+            html += '</div>';
+        }
+        
+        html += '</div>';
+        resultsContent.innerHTML = html;
+        resultsSection.style.display = 'block';
+        
+        if (downloadSection && data.file_path) {
+            downloadSection.style.display = 'block';
+            const downloadBtn = document.getElementById('download-ppt-btn');
+            if (downloadBtn) {
+                downloadBtn.onclick = () => downloadPowerPoint(data.file_path);
+            }
+        }
+    }
+}
+
+
+function hideTreatmentResults() {
+    const resultsSection = document.getElementById('treatment-results');
+    if (resultsSection) {
+        resultsSection.style.display = 'none';
+    }
+}
+
+function showTreatmentError(message) {
+    const errorSection = document.getElementById('treatment-error');
+    const errorMessage = document.getElementById('treatment-error-message');
+    
+    if (errorSection && errorMessage) {
+        errorMessage.textContent = message;
+        errorSection.style.display = 'block';
+    }
+}
+
+function hideTreatmentError() {
+    const errorSection = document.getElementById('treatment-error');
+    if (errorSection) {
+        errorSection.style.display = 'none';
+    }
+}
+
+async function downloadPowerPoint(filename) {
+    try {
+        // Direct download using window.location
+        window.location.href = `/api/powerpoint/download/${encodeURIComponent(filename)}`;
+    } catch (error) {
+        console.error('Error downloading PowerPoint:', error);
+        showTreatmentError('Erreur lors du téléchargement du fichier');
     }
 }

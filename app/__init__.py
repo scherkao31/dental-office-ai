@@ -47,7 +47,7 @@ def create_app(config_name=None):
     # Register blueprints
     from app.api import (
         main_bp, patients_bp, appointments_bp, 
-        treatments_bp, financial_bp, ai_bp
+        treatments_bp, financial_bp, ai_bp, powerpoint_bp
     )
     
     app.register_blueprint(main_bp)
@@ -56,6 +56,7 @@ def create_app(config_name=None):
     app.register_blueprint(treatments_bp, url_prefix='/api/treatments')
     app.register_blueprint(financial_bp, url_prefix='/api/financial')
     app.register_blueprint(ai_bp, url_prefix='/api/ai')
+    app.register_blueprint(powerpoint_bp, url_prefix='/api/powerpoint')
     
     # Initialize services
     with app.app_context():
