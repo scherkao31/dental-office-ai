@@ -94,6 +94,11 @@
                         <span>Planning</span>
                         <small>Agenda du cabinet</small>
                     </button>
+                    <button class="tab-button" data-tab="schedule-constraints">
+                        <i class="fas fa-cog"></i>
+                        <span>Contraintes</span>
+                        <small>Configuration planning</small>
+                    </button>
                     <button class="tab-button" data-tab="finance-dashboard">
                         <i class="fas fa-chart-line"></i>
                         <span>Finances</span>
@@ -395,6 +400,178 @@
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Schedule Constraints Tab -->
+            <div class="tab-content" id="schedule-constraints">
+                <div class="constraints-container">
+                    <div class="constraints-header">
+                        <h2><i class="fas fa-cog"></i> Configuration du Planning</h2>
+                        <p class="constraints-description">
+                            Définissez vos contraintes de planning pour optimiser l'organisation des rendez-vous.
+                        </p>
+                    </div>
+
+                    <div class="constraints-content">
+                        <!-- Working Hours Section -->
+                        <div class="constraint-section">
+                            <h3><i class="fas fa-clock"></i> Heures de Travail</h3>
+                            <div class="working-hours-grid">
+                                <div class="day-schedule">
+                                    <label>Lundi</label>
+                                    <div class="time-inputs">
+                                        <input type="time" id="monday-start" value="08:00">
+                                        <span>à</span>
+                                        <input type="time" id="monday-end" value="18:00">
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="monday-enabled" checked>
+                                            <span class="checkmark"></span>
+                                            Actif
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="day-schedule">
+                                    <label>Mardi</label>
+                                    <div class="time-inputs">
+                                        <input type="time" id="tuesday-start" value="08:00">
+                                        <span>à</span>
+                                        <input type="time" id="tuesday-end" value="18:00">
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="tuesday-enabled" checked>
+                                            <span class="checkmark"></span>
+                                            Actif
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="day-schedule">
+                                    <label>Mercredi</label>
+                                    <div class="time-inputs">
+                                        <input type="time" id="wednesday-start" value="08:00">
+                                        <span>à</span>
+                                        <input type="time" id="wednesday-end" value="18:00">
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="wednesday-enabled" checked>
+                                            <span class="checkmark"></span>
+                                            Actif
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="day-schedule">
+                                    <label>Jeudi</label>
+                                    <div class="time-inputs">
+                                        <input type="time" id="thursday-start" value="08:00">
+                                        <span>à</span>
+                                        <input type="time" id="thursday-end" value="18:00">
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="thursday-enabled" checked>
+                                            <span class="checkmark"></span>
+                                            Actif
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="day-schedule">
+                                    <label>Vendredi</label>
+                                    <div class="time-inputs">
+                                        <input type="time" id="friday-start" value="08:00">
+                                        <span>à</span>
+                                        <input type="time" id="friday-end" value="18:00">
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="friday-enabled" checked>
+                                            <span class="checkmark"></span>
+                                            Actif
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="day-schedule">
+                                    <label>Samedi</label>
+                                    <div class="time-inputs">
+                                        <input type="time" id="saturday-start" value="09:00">
+                                        <span>à</span>
+                                        <input type="time" id="saturday-end" value="13:00">
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="saturday-enabled">
+                                            <span class="checkmark"></span>
+                                            Actif
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="day-schedule">
+                                    <label>Dimanche</label>
+                                    <div class="time-inputs">
+                                        <input type="time" id="sunday-start" value="09:00">
+                                        <span>à</span>
+                                        <input type="time" id="sunday-end" value="13:00">
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="sunday-enabled">
+                                            <span class="checkmark"></span>
+                                            Actif
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Vacation/Holiday Section -->
+                        <div class="constraint-section">
+                            <h3><i class="fas fa-plane"></i> Vacances & Congés</h3>
+                            <div class="vacation-controls">
+                                <button class="btn btn-primary" id="add-vacation-btn">
+                                    <i class="fas fa-plus"></i> Ajouter une période
+                                </button>
+                            </div>
+                            <div class="vacation-list" id="vacation-list">
+                                <!-- Vacation periods will be dynamically added here -->
+                            </div>
+                        </div>
+
+                        <!-- Public Holidays Section -->
+                        <div class="constraint-section">
+                            <h3><i class="fas fa-flag"></i> Jours Fériés</h3>
+                            <div class="holiday-controls">
+                                <div class="holiday-preset">
+                                    <label for="holiday-country">Pays/Région:</label>
+                                    <select id="holiday-country">
+                                        <option value="CH">Suisse</option>
+                                        <option value="FR">France</option>
+                                        <option value="custom">Personnalisé</option>
+                                    </select>
+                                    <button class="btn btn-secondary" id="load-holidays-btn">
+                                        <i class="fas fa-download"></i> Charger
+                                    </button>
+                                </div>
+                                <button class="btn btn-primary" id="add-holiday-btn">
+                                    <i class="fas fa-plus"></i> Ajouter manuellement
+                                </button>
+                            </div>
+                            <div class="holiday-list" id="holiday-list">
+                                <!-- Holidays will be dynamically added here -->
+                            </div>
+                        </div>
+
+                        <!-- Doctor Availability Section -->
+                        <div class="constraint-section">
+                            <h3><i class="fas fa-user-md"></i> Disponibilité des Praticiens</h3>
+                            <div class="doctor-controls">
+                                <button class="btn btn-primary" id="add-doctor-btn">
+                                    <i class="fas fa-plus"></i> Ajouter un praticien
+                                </button>
+                            </div>
+                            <div class="doctor-list" id="doctor-list">
+                                <!-- Doctor schedules will be dynamically added here -->
+                            </div>
+                        </div>
+
+                        <!-- Save Actions -->
+                        <div class="constraint-actions">
+                            <button class="btn btn-success btn-lg" id="save-constraints-btn">
+                                <i class="fas fa-save"></i> Sauvegarder la Configuration
+                            </button>
+                            <button class="btn btn-secondary" id="reset-constraints-btn">
+                                <i class="fas fa-undo"></i> Réinitialiser
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -887,21 +1064,18 @@
     <!-- Include Chart.js for financial charts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
-    <!-- New modular architecture scripts -->
-    <!-- Core modules -->
-    <script src="{{ url_for('static', filename='js/core/api.js') }}"></script>
+    <!-- Modular scripts (loaded before main app.js for gradual migration) -->
     <script src="{{ url_for('static', filename='js/core/utils.js') }}"></script>
-    
-    <!-- Feature modules -->
+    <script src="{{ url_for('static', filename='js/core/api.js') }}"></script>
     <script src="{{ url_for('static', filename='js/features/dental-brain/dental-brain.js') }}"></script>
-    
-    <!-- App loader for gradual migration -->
+    <script src="{{ url_for('static', filename='js/features/practice/practice-manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/features/finance/finance-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app-loader.js') }}"></script>
     
-    <!-- Original app.js (kept for backward compatibility) -->
-    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    <!-- Main application script -->
+    <script src="{{ url_for('static', filename='app.js') }}?v=20250716223000"></script>
     
-    <!-- Temporary test script -->
+    <!-- Module testing (remove in production) -->
     <script src="{{ url_for('static', filename='js/test-modules.js') }}"></script>
 </body>
 </html> 

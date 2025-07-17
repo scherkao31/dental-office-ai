@@ -27,11 +27,60 @@ def chat():
         # Process message with AI
         result = ai_service.process_chat_message(message, tab_name)
         
-        return jsonify({
+        response_data = {
             'status': 'success',
             'response': result['response'],
             'references': result['references']
-        })
+        }
+        
+        # Add treatment plan data if available
+        if result.get('is_treatment_plan') and result.get('treatment_plan'):
+            response_data['treatment_plan'] = result['treatment_plan']
+            response_data['is_treatment_plan'] = True
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@ai_bp.route('/schedule-treatment-plan', methods=['POST'])
+def schedule_treatment_plan():
+    """Schedule a treatment plan by creating appointments"""
+    from app.services import ai_service
+    
+    if ai_service is None:
+        return jsonify({
+            'status': 'error',
+            'message': 'AI service not initialized'
+        }), 500
+    
+    try:
+        data = request.json
+        treatment_plan = data.get('treatment_plan', {})
+        patient_id = data.get('patient_id')
+        
+        if not treatment_plan:
+            return jsonify({
+                'status': 'error',
+                'message': 'Plan de traitement requis'
+            }), 400
+        
+        result = ai_service.schedule_treatment_plan(treatment_plan, patient_id)
+        
+        if result['success']:
+            return jsonify({
+                'status': 'success',
+                'scheduled_appointments': result['scheduled_appointments'],
+                'message': result['message']
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': result['error']
+            }), 500
         
     except Exception as e:
         return jsonify({
@@ -102,44 +151,6 @@ def generate_patient_education():
             'status': 'success',
             'content': content
         })
-        
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@ai_bp.route('/download-patient-education', methods=['POST'])
-def download_patient_education():
-    """Generate and download patient education PDF"""
-    from app.services import pdf_service
-    
-    if pdf_service is None:
-        return jsonify({
-            'status': 'error',
-            'message': 'PDF service not initialized'
-        }), 500
-    
-    try:
-        data = request.json
-        content = data.get('content', '')
-        title = data.get('title', 'Information Patient')
-        patient_name = data.get('patient_name', 'Patient')
-        
-        if not content:
-            return jsonify({
-                'status': 'error',
-                'message': 'Contenu requis'
-            }), 400
-        
-        pdf_path = pdf_service.generate_patient_education_pdf(content, title, patient_name)
-        
-        return send_file(
-            pdf_path,
-            as_attachment=True,
-            download_name=f"education_{patient_name.replace(' ', '_')}.pdf",
-            mimetype='application/pdf'
-        )
         
     except Exception as e:
         return jsonify({
@@ -219,31 +230,29 @@ def search_knowledge():
 
 @ai_bp.route('/reference/<reference_id>', methods=['GET'])
 def get_reference_details(reference_id):
-    """Get detailed information about a reference"""
+    """Get detailed information about a specific reference"""
+    from app.services import rag_service
+    
+    if rag_service is None:
+        return jsonify({
+            'status': 'error',
+            'message': 'RAG service not initialized'
+        }), 500
+    
     try:
-        # Parse reference type from ID
-        if reference_id.startswith('case_'):
-            ref_type = 'case'
-        elif reference_id.startswith('knowledge_'):
-            ref_type = 'knowledge'
+        # Get detailed reference information
+        reference_details = rag_service.get_detailed_reference(reference_id)
+        
+        if reference_details:
+            return jsonify({
+                'status': 'success',
+                'reference': reference_details
+            })
         else:
             return jsonify({
                 'status': 'error',
-                'message': 'Type de référence invalide'
-            }), 400
-        
-        # TODO: Implement retrieval of specific reference
-        # For now, return a placeholder
-        return jsonify({
-            'status': 'success',
-            'reference': {
-                'id': reference_id,
-                'type': ref_type,
-                'title': 'Reference Title',
-                'content': 'Reference content would be retrieved here',
-                'metadata': {}
-            }
-        })
+                'message': 'Reference not found'
+            }), 404
         
     except Exception as e:
         return jsonify({

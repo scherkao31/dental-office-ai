@@ -7,7 +7,9 @@
 const USE_MODULAR_FEATURES = {
     dentalBrain: false, // Set to true to use new modular dental-brain
     api: true,          // Use new API client
-    utils: true         // Use new utilities
+    utils: true,        // Use new utilities
+    practice: true,     // Use new practice manager (patients & schedule)
+    finance: true       // Use new finance manager
 };
 
 // Load new modules
@@ -45,11 +47,38 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
+    // Initialize modular practice manager if enabled
+    if (USE_MODULAR_FEATURES.practice && window.PracticeManager) {
+        // Disable old practice manager initialization
+        window.DISABLE_OLD_PRACTICE_MANAGER = true;
+        
+        // Wait a bit for dentalAI to be initialized
+        setTimeout(() => {
+            // Initialize new modular version with reference to dentalAISuite
+            window.practiceManager = new PracticeManager(window.dentalAI);
+            
+            console.log('✅ Modular Practice Manager initialized');
+        }, 100);
+    }
+    
+    // Initialize modular finance manager if enabled
+    if (USE_MODULAR_FEATURES.finance && window.FinanceManager) {
+        // Disable old finance manager initialization
+        window.DISABLE_OLD_FINANCE_MANAGER = true;
+        
+        // Initialize new modular version
+        window.financeManager = new FinanceManager();
+        
+        console.log('✅ Modular Finance Manager initialized');
+    }
+    
     // Log migration status
     console.log('📊 Migration Status:', {
         'API Client': USE_MODULAR_FEATURES.api ? '✅ New' : '⚠️ Old',
         'Utilities': USE_MODULAR_FEATURES.utils ? '✅ New' : '⚠️ Old',
-        'Dental Brain': USE_MODULAR_FEATURES.dentalBrain ? '✅ New' : '⚠️ Old'
+        'Dental Brain': USE_MODULAR_FEATURES.dentalBrain ? '✅ New' : '⚠️ Old',
+        'Practice Manager': USE_MODULAR_FEATURES.practice ? '✅ New' : '⚠️ Old',
+        'Finance Manager': USE_MODULAR_FEATURES.finance ? '✅ New' : '⚠️ Old'
     });
 });
 

@@ -200,7 +200,17 @@ class DentalAISuite {
                 this.hideTypingIndicator(tab);
                 
                 // Add assistant response to chat
-                this.addMessage(tab, 'assistant', data.response, data.references, data.context_info);
+                // Check if this is a treatment plan response
+                if (data.is_treatment_plan && data.treatment_plan) {
+                    console.log('🎯 Treatment plan detected, rendering table:', data.treatment_plan);
+                    this.addTreatmentPlanMessage(tab, data);
+                } else {
+                    console.log('📝 Regular message response:', data);
+                    if (data.is_treatment_plan && !data.treatment_plan) {
+                        console.warn('⚠️ Treatment plan flag set but no treatment_plan data received');
+                    }
+                    this.addMessage(tab, 'assistant', data.response, data.references, data.context_info);
+                }
                 
                 // Update chat history for this tab
                 instance.history.push(
@@ -477,6 +487,703 @@ class DentalAISuite {
         
         html += '</div>';
         return html;
+    }
+
+    addTreatmentPlanMessage(tab, data) {
+        const instance = this.chatInstances[tab];
+        const messagesContainer = instance.messages;
+        
+        console.log('🔄 Starting treatment plan message creation');
+        console.log('📊 Treatment plan data:', data.treatment_plan);
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant treatment-plan';
+        
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = 'message-avatar';
+        avatarDiv.innerHTML = '<i class="fas fa-tooth"></i>';
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        
+        // Store treatment plan globally for modifications
+        this.currentTreatmentPlan = data.treatment_plan;
+        const planId = 'plan-' + Date.now();
+        
+        // Validate treatment sequence exists
+        if (!data.treatment_plan.treatment_sequence || !Array.isArray(data.treatment_plan.treatment_sequence)) {
+            console.error('❌ Invalid treatment_sequence:', data.treatment_plan.treatment_sequence);
+            contentDiv.innerHTML = '<div class="error-message">Erreur: Plan de traitement mal formé. La séquence de traitement est manquante ou invalide.</div>';
+            messageDiv.appendChild(avatarDiv);
+            messageDiv.appendChild(contentDiv);
+            messagesContainer.appendChild(messageDiv);
+            return;
+        }
+        
+        console.log(`✅ Valid treatment sequence with ${data.treatment_plan.treatment_sequence.length} appointments`);
+        
+        // Create treatment plan HTML with editable table
+        const treatmentPlan = data.treatment_plan;
+        let html = `
+            <div class="treatment-plan-container" data-plan-id="${planId}">
+                <div class="treatment-plan-header">
+                    <h4><i class="fas fa-calendar-check"></i> Plan de Traitement Généré</h4>
+                    <div class="consultation-text">
+                        <strong>Consultation:</strong> ${treatmentPlan.consultation_text || 'Plan de traitement'}
+                    </div>
+                    <div class="edit-instructions">
+                        <i class="fas fa-info-circle"></i> 
+                        <span>Cliquez sur une cellule pour modifier • Glissez les lignes pour réorganiser</span>
+                    </div>
+                </div>
+                
+                <div class="treatment-sequence-table editable-table">
+                    <table id="treatment-table-${planId}">
+                        <thead>
+                            <tr>
+                                <th width="40"></th>
+                                <th width="60">RDV</th>
+                                <th>Traitement</th>
+                                <th width="100">Durée</th>
+                                <th width="100">Délai</th>
+                                <th width="100">Praticien</th>
+                                <th>Remarques</th>
+                                <th width="80">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="treatment-tbody-${planId}">
+        `;
+        
+        // Add each treatment sequence row with editable cells
+        treatmentPlan.treatment_sequence.forEach((appointment, index) => {
+            html += `
+                <tr class="draggable-row" data-index="${index}" draggable="true">
+                    <td class="drag-handle">
+                        <i class="fas fa-grip-vertical"></i>
+                    </td>
+                    <td class="rdv-number">${appointment.rdv}</td>
+                    <td class="treatment-desc editable" contenteditable="true" data-field="traitement">${appointment.traitement}</td>
+                    <td class="duration editable" contenteditable="true" data-field="duree">${appointment.duree}</td>
+                    <td class="delay editable" contenteditable="true" data-field="delai">${appointment.delai || '-'}</td>
+                    <td class="doctor editable" contenteditable="true" data-field="dr">${appointment.dr || 'NB'}</td>
+                    <td class="remarks editable" contenteditable="true" data-field="remarque">${appointment.remarque || '-'}</td>
+                    <td class="row-actions">
+                        <button class="btn-icon btn-delete" onclick="window.dentalAI.deleteSequenceRow('${planId}', ${index})" title="Supprimer">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                        </tbody>
+                    </table>
+                    <div class="table-actions">
+                        <button class="btn btn-sm btn-add-row" onclick="window.dentalAI.addSequenceRow('${planId}')">
+                            <i class="fas fa-plus"></i> Ajouter un RDV
+                        </button>
+                    </div>
+                </div>
+        `;
+        
+        // Add references section if available
+        if (data.references && data.references.length > 0) {
+            html += this.createReferencesSection(data.references);
+        }
+        
+        html += `
+                <div class="treatment-plan-actions">
+                    <button class="btn btn-primary" onclick="window.dentalAI.scheduleTreatmentPlan('${planId}')">
+                        <i class="fas fa-calendar-plus"></i> Programmer les RDV
+                    </button>
+                    <button class="btn btn-secondary" onclick="window.dentalAI.saveTreatmentPlan('${planId}')">
+                        <i class="fas fa-save"></i> Sauvegarder
+                    </button>
+                    <button class="btn btn-secondary" onclick="window.dentalAI.exportTreatmentPlan('${planId}')">
+                        <i class="fas fa-download"></i> Exporter
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        contentDiv.innerHTML = html;
+        messageDiv.appendChild(avatarDiv);
+        messageDiv.appendChild(contentDiv);
+        
+        messagesContainer.appendChild(messageDiv);
+        this.scrollToBottom(tab);
+        
+        // Initialize drag and drop functionality
+        this.initializeDragAndDrop(planId);
+        
+        // Initialize inline editing
+        this.initializeInlineEditing(planId);
+    }
+
+    createReferencesSection(references) {
+        let html = `
+            <div class="references-section">
+                <h5><i class="fas fa-book"></i> Références utilisées</h5>
+                <div class="references-grid">
+        `;
+        
+        console.log('🚀 UPDATED JAVASCRIPT LOADED - Version 20250716214200');
+        references.forEach(reference => {
+            console.log('🔍 Reference debug:', {
+                id: reference.id,
+                title: reference.title,
+                similarity_score: reference.similarity_score,
+                type: reference.similarity_score ? typeof reference.similarity_score : 'undefined'
+            });
+            
+            // Ensure similarity_score is a valid number
+            const similarityScore = (typeof reference.similarity_score === 'number' && !isNaN(reference.similarity_score)) 
+                ? reference.similarity_score 
+                : 0;
+            const similarityPct = Math.round(similarityScore * 100);
+            
+            console.log('🔢 Similarity calculation:', {
+                original: reference.similarity_score,
+                processed: similarityScore,
+                percentage: similarityPct
+            });
+            const typeIcon = this.getTypeIcon(reference.type);
+            const categories = reference.categories ? reference.categories.join(', ') : '';
+            
+            html += `
+                <div class="reference-card" data-ref-id="${reference.id}" onclick="(function() { 
+                    console.log('🔍 [createReferencesSection] Clicking reference with ID:', '${reference.id}'); 
+                    if(window.dentalAI && typeof window.dentalAI.showReferenceDetails === 'function') { 
+                        window.dentalAI.showReferenceDetails('${reference.id}'); 
+                    } else { 
+                        console.error('DentalAI not initialized yet'); 
+                        alert('Veuillez patienter que l\\'application se charge complètement.'); 
+                    } 
+                })()">
+                    <div class="reference-header">
+                        <div class="reference-type">
+                            <i class="${typeIcon}"></i>
+                            <span>${this.getTypeLabel(reference.type)}</span>
+                        </div>
+                        <div class="similarity-score">
+                            <div class="similarity-bar">
+                                <div class="similarity-fill" style="width: ${similarityPct}%"></div>
+                            </div>
+                            <span class="similarity-text">${similarityPct}%</span>
+                        </div>
+                    </div>
+                    <div class="reference-content">
+                        <h6>${reference.title}</h6>
+                        <p class="reference-source">${reference.source}</p>
+                        ${categories ? `<p class="reference-categories">${categories}</p>` : ''}
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `
+                </div>
+            </div>
+        `;
+        
+        return html;
+    }
+
+    getTypeIcon(type) {
+        const icons = {
+            'clinical_case': 'fas fa-user-md',
+            'ideal_sequence': 'fas fa-star',
+            'general_knowledge': 'fas fa-book-open'
+        };
+        return icons[type] || 'fas fa-file';
+    }
+
+    getTypeLabel(type) {
+        const labels = {
+            'clinical_case': 'Cas clinique',
+            'ideal_sequence': 'Séquence idéale',
+            'general_knowledge': 'Connaissance générale'
+        };
+        return labels[type] || 'Référence';
+    }
+
+    async showReferenceDetails(referenceId) {
+        try {
+            console.log('🔍 Fetching reference details for ID:', referenceId);
+            const response = await fetch(`/api/ai/reference/${referenceId}`);
+            
+            console.log('📡 Response status:', response.status);
+            console.log('📡 Response headers:', response.headers.get('content-type'));
+            console.log('📡 Current URL:', window.location.href);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.log('📡 Error response text:', errorText);
+                
+                // Check if it's a port issue
+                if (response.status === 403 && window.location.port === '5000') {
+                    throw new Error(`Mauvais port détecté! Veuillez accéder à l'application sur http://localhost:5001 au lieu de http://localhost:5000`);
+                }
+                
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                const responseText = await response.text();
+                console.log('📡 Non-JSON response text:', responseText.substring(0, 200));
+                throw new Error('Response is not JSON - server might be returning HTML error page');
+            }
+            
+            // Try to get the response text first for debugging
+            const responseText = await response.text();
+            console.log('📡 Raw response before parsing:', responseText.substring(0, 1000));
+            
+            let data;
+            try {
+                data = JSON.parse(responseText);
+                console.log('📡 Parsed JSON data:', data);
+            } catch (parseError) {
+                console.error('🚨 JSON Parse Error:', parseError);
+                console.error('🚨 Response was:', responseText);
+                throw new Error(`JSON parsing failed: ${parseError.message}`);
+            }
+            
+            if (data.status === 'success') {
+                this.displayReferenceModal(data.reference);
+            } else {
+                alert(`Erreur lors du chargement: ${data.message}`);
+                console.error('Error fetching reference details:', data.message);
+            }
+        } catch (error) {
+            console.error('🚨 Full error details:', error);
+            console.error('🚨 Error name:', error.name);
+            console.error('🚨 Error message:', error.message);
+            console.error('🚨 Error stack:', error.stack);
+            
+            // Try to get the raw response for debugging
+            try {
+                const debugResponse = await fetch(`/api/ai/reference/${referenceId}`);
+                const debugText = await debugResponse.text();
+                console.error('🚨 Raw response text:', debugText.substring(0, 500));
+                console.error('🚨 Response headers:', [...debugResponse.headers.entries()]);
+            } catch (debugError) {
+                console.error('🚨 Could not fetch debug response:', debugError);
+            }
+            
+            if (error.message.includes('Unexpected token')) {
+                alert(`Erreur lors du chargement: Unexpected token '<', "${error.message}"`);
+            } else {
+                alert(`Erreur lors du chargement: ${error.message}`);
+            }
+        }
+    }
+
+    displayReferenceModal(reference) {
+        // Create modal HTML
+        const modalHTML = `
+            <div class="reference-modal-overlay" onclick="this.remove()">
+                <div class="reference-modal" onclick="event.stopPropagation()">
+                    <div class="reference-modal-header">
+                        <h3><i class="${this.getTypeIcon(reference.type)}"></i> ${reference.title}</h3>
+                        <button class="close-btn" onclick="this.closest('.reference-modal-overlay').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="reference-modal-content">
+                        <div class="reference-info">
+                            <p><strong>Type:</strong> ${this.getTypeLabel(reference.type)}</p>
+                            <p><strong>Source:</strong> ${reference.source}</p>
+                            <p><strong>Fichier:</strong> ${reference.filename}</p>
+                        </div>
+                        
+                        ${reference.consultation_text ? `
+                            <div class="consultation-section">
+                                <h4>Consultation</h4>
+                                <p>${reference.consultation_text}</p>
+                                ${reference.consultation_text_expanded ? `
+                                    <h5>Consultation étendue</h5>
+                                    <p>${reference.consultation_text_expanded}</p>
+                                ` : ''}
+                            </div>
+                        ` : ''}
+                        
+                        ${reference.treatment_sequence && reference.treatment_sequence.length > 0 ? `
+                            <div class="treatment-sequence-section">
+                                <h4>Séquence de traitement</h4>
+                                <table class="reference-sequence-table">
+                                    <thead>
+                                        <tr>
+                                            <th>RDV</th>
+                                            <th>Traitement</th>
+                                            <th>Durée</th>
+                                            <th>Délai</th>
+                                            <th>Praticien</th>
+                                            <th>Remarques</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${reference.treatment_sequence.map(appointment => `
+                                            <tr>
+                                                <td>${appointment.rdv}</td>
+                                                <td>${appointment.traitement}</td>
+                                                <td>${appointment.duree}</td>
+                                                <td>${appointment.delai || '-'}</td>
+                                                <td>${appointment.dr}</td>
+                                                <td>${appointment.remarque || '-'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ` : ''}
+                        
+                        ${reference.enhanced_content ? `
+                            <div class="enhanced-content-section">
+                                <h4>Contenu étendu</h4>
+                                <pre>${reference.enhanced_content}</pre>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add modal to page
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    initializeDragAndDrop(planId) {
+        const tbody = document.getElementById(`treatment-tbody-${planId}`);
+        if (!tbody) return;
+        
+        let draggedRow = null;
+        
+        tbody.addEventListener('dragstart', (e) => {
+            if (e.target.tagName === 'TR' && e.target.classList.contains('draggable-row')) {
+                draggedRow = e.target;
+                e.target.style.opacity = '0.5';
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/html', e.target.innerHTML);
+            }
+        });
+        
+        tbody.addEventListener('dragend', (e) => {
+            if (e.target.tagName === 'TR') {
+                e.target.style.opacity = '';
+            }
+        });
+        
+        tbody.addEventListener('dragover', (e) => {
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.dataTransfer.dropEffect = 'move';
+            
+            const afterElement = this.getDragAfterElement(tbody, e.clientY);
+            if (afterElement == null) {
+                tbody.appendChild(draggedRow);
+            } else {
+                tbody.insertBefore(draggedRow, afterElement);
+            }
+        });
+        
+        tbody.addEventListener('drop', (e) => {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+            
+            // Update RDV numbers after reordering
+            this.updateRdvNumbers(planId);
+            return false;
+        });
+    }
+    
+    getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.draggable-row:not(.dragging)')];
+        
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+    
+    updateRdvNumbers(planId) {
+        const rows = document.querySelectorAll(`#treatment-tbody-${planId} tr`);
+        rows.forEach((row, index) => {
+            const rdvCell = row.querySelector('.rdv-number');
+            if (rdvCell) {
+                rdvCell.textContent = index + 1;
+            }
+            row.setAttribute('data-index', index);
+        });
+        
+        // Update the stored treatment plan
+        this.updateStoredPlan(planId);
+    }
+    
+    initializeInlineEditing(planId) {
+        const editableCells = document.querySelectorAll(`#treatment-table-${planId} .editable`);
+        
+        editableCells.forEach(cell => {
+            // Save original value on focus
+            cell.addEventListener('focus', (e) => {
+                e.target.setAttribute('data-original', e.target.textContent);
+                e.target.classList.add('editing');
+            });
+            
+            // Handle blur event
+            cell.addEventListener('blur', (e) => {
+                e.target.classList.remove('editing');
+                const newValue = e.target.textContent.trim();
+                const originalValue = e.target.getAttribute('data-original');
+                
+                if (newValue !== originalValue) {
+                    this.updateStoredPlan(planId);
+                    this.showSaveIndicator(e.target);
+                }
+            });
+            
+            // Handle enter key
+            cell.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.target.blur();
+                }
+            });
+        });
+    }
+    
+    showSaveIndicator(element) {
+        const indicator = document.createElement('span');
+        indicator.className = 'save-indicator';
+        indicator.innerHTML = '<i class="fas fa-check"></i> Sauvegardé';
+        element.appendChild(indicator);
+        
+        setTimeout(() => {
+            indicator.remove();
+        }, 2000);
+    }
+    
+    updateStoredPlan(planId) {
+        const tbody = document.getElementById(`treatment-tbody-${planId}`);
+        if (!tbody) return;
+        
+        const rows = tbody.querySelectorAll('tr');
+        const updatedSequence = [];
+        
+        rows.forEach((row, index) => {
+            const appointment = {
+                rdv: index + 1,
+                traitement: row.querySelector('[data-field="traitement"]').textContent.trim(),
+                duree: row.querySelector('[data-field="duree"]').textContent.trim(),
+                delai: row.querySelector('[data-field="delai"]').textContent.trim(),
+                dr: row.querySelector('[data-field="dr"]').textContent.trim(),
+                remarque: row.querySelector('[data-field="remarque"]').textContent.trim(),
+                date: ''
+            };
+            updatedSequence.push(appointment);
+        });
+        
+        // Update or create the current treatment plan
+        if (!this.currentTreatmentPlan) {
+            this.currentTreatmentPlan = {
+                id: planId,
+                treatment_sequence: [],
+                consultation_text: '',
+                created_at: new Date().toISOString()
+            };
+        }
+        
+        // Ensure the plan has the correct ID and update the sequence
+        this.currentTreatmentPlan.id = planId;
+        this.currentTreatmentPlan.treatment_sequence = updatedSequence;
+    }
+    
+    deleteSequenceRow(planId, index) {
+        const tbody = document.getElementById(`treatment-tbody-${planId}`);
+        if (!tbody) return;
+        
+        const rows = tbody.querySelectorAll('tr');
+        if (rows[index]) {
+            rows[index].remove();
+            this.updateRdvNumbers(planId);
+        }
+    }
+    
+    addSequenceRow(planId) {
+        const tbody = document.getElementById(`treatment-tbody-${planId}`);
+        if (!tbody) return;
+        
+        const newIndex = tbody.querySelectorAll('tr').length;
+        const newRow = document.createElement('tr');
+        newRow.className = 'draggable-row';
+        newRow.setAttribute('data-index', newIndex);
+        newRow.setAttribute('draggable', 'true');
+        
+        newRow.innerHTML = `
+            <td class="drag-handle">
+                <i class="fas fa-grip-vertical"></i>
+            </td>
+            <td class="rdv-number">${newIndex + 1}</td>
+            <td class="treatment-desc editable" contenteditable="true" data-field="traitement">Nouveau traitement</td>
+            <td class="duration editable" contenteditable="true" data-field="duree">1h</td>
+            <td class="delay editable" contenteditable="true" data-field="delai">-</td>
+            <td class="doctor editable" contenteditable="true" data-field="dr">NB</td>
+            <td class="remarks editable" contenteditable="true" data-field="remarque">-</td>
+            <td class="row-actions">
+                <button class="btn-icon btn-delete" onclick="window.dentalAI.deleteSequenceRow('${planId}', ${newIndex})" title="Supprimer">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        `;
+        
+        tbody.appendChild(newRow);
+        
+        // Re-initialize editing for the new row
+        this.initializeInlineEditing(planId);
+        this.updateStoredPlan(planId);
+        
+        // Focus on the new treatment cell
+        const newTreatmentCell = newRow.querySelector('[data-field="traitement"]');
+        if (newTreatmentCell) {
+            newTreatmentCell.focus();
+        }
+    }
+    
+    saveTreatmentPlan(planId) {
+        this.updateStoredPlan(planId);
+        
+        // Show success message
+        const container = document.querySelector(`[data-plan-id="${planId}"]`);
+        if (container) {
+            const message = document.createElement('div');
+            message.className = 'save-success-message';
+            message.innerHTML = '<i class="fas fa-check-circle"></i> Plan de traitement sauvegardé avec succès';
+            container.insertBefore(message, container.firstChild);
+            
+            setTimeout(() => {
+                message.remove();
+            }, 3000);
+        }
+        
+        console.log('Saved treatment plan:', this.currentTreatmentPlan);
+    }
+
+    async scheduleTreatmentPlan(planId) {
+        console.log('🚀 scheduleTreatmentPlan called with planId:', planId);
+        
+        // Update the stored plan data
+        this.updateStoredPlan(planId);
+        console.log('📋 Current treatment plan:', this.currentTreatmentPlan);
+        
+        // Pass the treatment plan to the practice manager for enhanced scheduling
+        console.log('🔍 Checking practice manager availability...');
+        console.log('window.practiceManager exists:', !!window.practiceManager);
+        console.log('scheduleTreatmentPlan method exists:', typeof window.practiceManager?.scheduleTreatmentPlan);
+        console.log('All practice manager methods:', window.practiceManager ? Object.getOwnPropertyNames(Object.getPrototypeOf(window.practiceManager)) : 'No practice manager');
+        
+        if (window.practiceManager && typeof window.practiceManager.scheduleTreatmentPlan === 'function') {
+            console.log('✅ Practice manager available, using enhanced scheduling');
+            console.log('📋 Setting treatment plan in practice manager:', this.currentTreatmentPlan);
+            
+            // Set the current treatment plan in practice manager
+            window.practiceManager.setCurrentTreatmentPlan(this.currentTreatmentPlan);
+            
+            // Also set the dentalAISuite reference in practice manager if not set
+            if (!window.practiceManager.dentalAISuite) {
+                window.practiceManager.dentalAISuite = this;
+                console.log('🔗 Set dentalAISuite reference in practice manager');
+            }
+            
+            // Call the enhanced scheduling workflow
+            await window.practiceManager.scheduleTreatmentPlan(planId);
+        } else {
+            // Fallback to old method if practice manager is not available
+            console.warn('❌ Practice manager not available, using fallback scheduling');
+            console.log('window.practiceManager:', window.practiceManager);
+            console.log('scheduleTreatmentPlan function:', window.practiceManager?.scheduleTreatmentPlan);
+            await this.fallbackScheduleTreatmentPlan(planId);
+        }
+    }
+
+    async fallbackScheduleTreatmentPlan(planId) {
+        const treatmentPlan = this.currentTreatmentPlan;
+        try {
+            const response = await fetch('/api/ai/schedule-treatment-plan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    treatment_plan: treatmentPlan,
+                    patient_id: null
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                this.addMessage('dental-brain', 'assistant', 
+                    `✅ ${data.message}\n\nLes rendez-vous ont été programmés avec succès !`);
+            } else {
+                this.addMessage('dental-brain', 'assistant', 
+                    `❌ Erreur lors de la programmation : ${data.message}`);
+            }
+        } catch (error) {
+            this.addMessage('dental-brain', 'assistant', 
+                `❌ Erreur lors de la programmation : ${error.message}`);
+        }
+    }
+
+    modifyTreatmentPlan(planId) {
+        this.updateStoredPlan(planId);
+        const treatmentPlan = this.currentTreatmentPlan;
+        
+        // Add the current treatment plan to the input for modification
+        const instance = this.chatInstances['dental-brain'];
+        const currentText = treatmentPlan.consultation_text || '';
+        instance.input.value = `Modifier ce plan de traitement :\n${currentText}\n\nChangements demandés : `;
+        instance.input.focus();
+        this.autoResizeTextarea(instance.input);
+    }
+
+    exportTreatmentPlan(planId) {
+        this.updateStoredPlan(planId);
+        const treatmentPlan = this.currentTreatmentPlan;
+        // Create a simple text export
+        let exportText = `PLAN DE TRAITEMENT\n`;
+        exportText += `===================\n\n`;
+        exportText += `Consultation: ${treatmentPlan.consultation_text || 'Plan de traitement'}\n\n`;
+        exportText += `SÉQUENCE DE TRAITEMENT:\n`;
+        exportText += `------------------------\n\n`;
+        
+        treatmentPlan.treatment_sequence.forEach(appointment => {
+            exportText += `RDV ${appointment.rdv}:\n`;
+            exportText += `  Traitement: ${appointment.traitement}\n`;
+            exportText += `  Durée: ${appointment.duree}\n`;
+            exportText += `  Délai: ${appointment.delai || '-'}\n`;
+            exportText += `  Praticien: ${appointment.dr}\n`;
+            exportText += `  Remarques: ${appointment.remarque || '-'}\n\n`;
+        });
+        
+        // Create and download file
+        const blob = new Blob([exportText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `plan_traitement_${new Date().toISOString().slice(0, 10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     async approveAutonomousPlan(autonomousPlan) {
@@ -1213,16 +1920,29 @@ class DentalAISuite {
                     <div class="references-section">
                         <h3><i class="fas fa-book"></i> Références utilisées</h3>
                         <div class="references-grid">
-                            ${references.map(ref => `
-                                <div class="reference-card" onclick="app.showReferenceDetails('${ref.id}')">
+                            ${references.map(ref => {
+                                const similarityScore = (typeof ref.similarity_score === 'number' && !isNaN(ref.similarity_score)) 
+                                    ? ref.similarity_score 
+                                    : (typeof ref.similarity === 'number' && !isNaN(ref.similarity) ? ref.similarity : 0);
+                                const similarityPct = Math.round(similarityScore * 100);
+                                return `
+                                <div class="reference-card" data-ref-id="${ref.id}" onclick="(function() { 
+                                    console.log('🔍 Clicking reference with ID:', '${ref.id}'); 
+                                    if(window.dentalAI && typeof window.dentalAI.showReferenceDetails === 'function') { 
+                                        window.dentalAI.showReferenceDetails('${ref.id}'); 
+                                    } else { 
+                                        console.error('DentalAI not initialized yet'); 
+                                        alert('Veuillez patienter que l\\'application se charge complètement.'); 
+                                    } 
+                                })()">
                                     <div class="reference-header">
                                         <span class="reference-type">${ref.type}</span>
-                                        <span class="reference-similarity">${Math.round(ref.similarity * 100)}%</span>
+                                        <span class="reference-similarity">${similarityPct}%</span>
                                     </div>
                                     <h4>${ref.title}</h4>
-                                    <p>${ref.description}</p>
-                                </div>
-                            `).join('')}
+                                    <p>${ref.description || 'Voir détails'}</p>
+                                </div>`;
+                            }).join('')}
                         </div>
                     </div>
                 ` : ''}
@@ -1374,33 +2094,6 @@ class DentalAISuite {
         return tableHTML;
     }
 
-    createReferencesSection(references) {
-        let referencesHTML = '<div class="references-section">';
-        referencesHTML += '<h4><i class="fas fa-database"></i> Références utilisées</h4>';
-        referencesHTML += '<div class="references-grid">';
-        
-        references.forEach((ref, index) => {
-            const similarity = ref.similarity || 0;
-            const similarityPercent = (similarity * 100).toFixed(1);
-            
-            referencesHTML += `<div class="reference-item">
-                <div class="reference-header">
-                    <i class="fas fa-file-medical"></i>
-                    <span class="reference-title">${ref.title || `Référence ${index + 1}`}</span>
-                    <span class="reference-similarity">${similarityPercent}% similaire</span>
-                </div>
-                <div class="reference-content">
-                    <p>${ref.description || 'Référence utilisée pour la génération du plan'}</p>
-                    <button onclick="dentalAI.showReferenceDetails('${ref.id}')" class="reference-link">
-                        <i class="fas fa-external-link-alt"></i> Voir détails
-                    </button>
-                </div>
-            </div>`;
-        });
-        
-        referencesHTML += '</div></div>';
-        return referencesHTML;
-    }
 
     setupInlineEditing(planId) {
         const planElement = document.getElementById(planId);
@@ -1636,7 +2329,11 @@ class DentalAISuite {
         }
     }
 
-    showReferenceDetails(referenceId) {
+    // DUPLICATE FUNCTION - RENAMED TO PREVENT CONFLICT
+    // REMOVED DUPLICATE FUNCTION - This was causing conflicts
+    showReferenceDetails_OLD_WRONG_URL(referenceId) {
+        // Function body removed - using wrong API endpoint
+        console.warn('OLD showReferenceDetails function called - this should not happen');
         // Create modal to show reference details
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
@@ -4085,2048 +4782,2038 @@ class DentalAISuite {
 
 // === PRACTICE MANAGEMENT SYSTEM ===
 
-class PracticeManager {
-    constructor() {
-        this.currentWeekStart = this.getWeekStart(new Date());
-        this.patients = [];
-        this.appointments = [];
-        this.init();
-    }
-
-    init() {
-        this.setupEventListeners();
-        this.loadPatients();
-        this.loadSchedule();
-    }
-
-    setupEventListeners() {
-        // Patient management
-        document.getElementById('add-patient-btn')?.addEventListener('click', () => this.showPatientModal());
-        document.getElementById('patient-search')?.addEventListener('input', (e) => this.searchPatients(e.target.value));
-        
-        // Schedule management
-        document.getElementById('prev-week')?.addEventListener('click', () => this.navigateWeek(-1));
-        document.getElementById('next-week')?.addEventListener('click', () => this.navigateWeek(1));
-        document.getElementById('add-appointment-btn')?.addEventListener('click', () => this.showAppointmentModal());
-        
-        // Modal handling
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('modal')) {
-                this.hideModal(e.target);
-            }
-            if (e.target.classList.contains('modal-close')) {
-                this.hideModal(e.target.closest('.modal'));
-            }
-        });
-    }
-
-    // === PATIENT MANAGEMENT ===
-
-    async loadPatients(searchTerm = '') {
-        try {
-            const response = await fetch(`/api/patients/?search=${encodeURIComponent(searchTerm)}`);
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this.patients = data.patients;
-                this.renderPatients();
-            } else {
-                console.error('Failed to load patients:', data.message);
-            }
-        } catch (error) {
-            console.error('Error loading patients:', error);
-        }
-    }
-
-    renderPatients() {
-        const container = document.getElementById('patients-list');
-        if (!container) return;
-
-        if (this.patients.length === 0) {
-            container.innerHTML = `
-                <div class="loading">
-                    <i class="fas fa-user-plus"></i>
-                    Aucun patient trouvé. Ajoutez votre premier patient.
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = this.patients.map(patient => `
-            <div class="patient-card" data-patient-id="${patient.id}">
-                <div class="patient-card-header">
-                    <div>
-                        <h3 class="patient-name">${patient.first_name} ${patient.last_name}</h3>
-                        <div class="patient-id">#${patient.id.substring(0, 8)}</div>
-                    </div>
-                    <div class="patient-actions">
-                        <button class="btn btn-sm btn-primary" onclick="practiceManager.viewPatient('${patient.id}')">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button class="btn btn-sm btn-secondary" onclick="practiceManager.editPatient('${patient.id}')">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="patient-info">
-                    ${patient.email ? `<div class="patient-detail"><i class="fas fa-envelope"></i> ${patient.email}</div>` : ''}
-                    ${patient.phone ? `<div class="patient-detail"><i class="fas fa-phone"></i> ${patient.phone}</div>` : ''}
-                    ${patient.birth_date ? `<div class="patient-detail"><i class="fas fa-birthday-cake"></i> ${this.formatDate(patient.birth_date)}</div>` : ''}
-                </div>
-                <div class="patient-stats">
-                    <div class="patient-stat">
-                        <div class="patient-stat-value">0</div>
-                        <div class="patient-stat-label">RDV</div>
-                    </div>
-                    <div class="patient-stat">
-                        <div class="patient-stat-value">0</div>
-                        <div class="patient-stat-label">Plans</div>
-                    </div>
-                    <div class="patient-stat">
-                        <div class="patient-stat-value">Actif</div>
-                        <div class="patient-stat-label">Statut</div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    searchPatients(term) {
-        this.loadPatients(term);
-    }
-
-    showPatientModal(patientId = null) {
-        const isEdit = patientId !== null;
-        const patient = isEdit ? this.patients.find(p => p.id === patientId) : null;
-        
-        const modal = this.createModal(`
-            <div class="modal-header">
-                <h2 class="modal-title">
-                    <i class="fas fa-user"></i>
-                    ${isEdit ? 'Modifier Patient' : 'Nouveau Patient'}
-                </h2>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="patient-form">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Prénom *</label>
-                            <input type="text" class="form-control" name="first_name" required 
-                                   value="${patient?.first_name || ''}">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Nom *</label>
-                            <input type="text" class="form-control" name="last_name" required 
-                                   value="${patient?.last_name || ''}">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Email</label>
-                            <input type="email" class="form-control" name="email" 
-                                   value="${patient?.email || ''}">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Téléphone</label>
-                            <input type="tel" class="form-control" name="phone" 
-                                   value="${patient?.phone || ''}">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Date de naissance</label>
-                        <input type="date" class="form-control" name="birth_date" 
-                               value="${patient?.birth_date || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Adresse</label>
-                        <textarea class="form-control" name="address" rows="3">${patient?.address || ''}</textarea>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Antécédents médicaux</label>
-                        <textarea class="form-control" name="medical_history" rows="3">${patient?.medical_history || ''}</textarea>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Allergies</label>
-                        <textarea class="form-control" name="allergies" rows="2">${patient?.allergies || ''}</textarea>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Contact d'urgence</label>
-                        <input type="text" class="form-control" name="emergency_contact" 
-                               value="${patient?.emergency_contact || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Informations assurance</label>
-                        <textarea class="form-control" name="insurance_info" rows="2">${patient?.insurance_info || ''}</textarea>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Notes</label>
-                        <textarea class="form-control" name="notes" rows="3">${patient?.notes || ''}</textarea>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="practiceManager.hideModal(this.closest('.modal'))">
-                    Annuler
-                </button>
-                <button class="btn btn-primary" onclick="practiceManager.savePatient('${patientId || ''}')">
-                    <i class="fas fa-save"></i>
-                    ${isEdit ? 'Mettre à jour' : 'Créer'}
-                </button>
-            </div>
-        `);
-        
-        this.showModal(modal);
-    }
-
-    async savePatient(patientId = '') {
-        const form = document.getElementById('patient-form');
-        const formData = new FormData(form);
-        const patientData = Object.fromEntries(formData.entries());
-
-        try {
-            const isEdit = patientId !== '';
-            const url = isEdit ? `/api/patients/${patientId}` : '/api/patients';
-            const method = isEdit ? 'PUT' : 'POST';
-
-            const response = await fetch(url, {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(patientData)
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.hideModal(document.querySelector('.modal.show'));
-                this.loadPatients();
-                this.showNotification(data.message || 'Patient sauvegardé avec succès', 'success');
-            } else {
-                this.showNotification(data.error || 'Erreur lors de la sauvegarde', 'error');
-            }
-        } catch (error) {
-            console.error('Error saving patient:', error);
-            this.showNotification('Erreur lors de la sauvegarde', 'error');
-        }
-    }
-
-    async viewPatient(patientId) {
-        try {
-            const response = await fetch(`/api/patients/${patientId}`);
-            const data = await response.json();
-
-            if (data.success) {
-                const patient = data.patient;
-                const modal = this.createModal(`
-                    <div class="modal-header">
-                        <h2 class="modal-title">
-                            <i class="fas fa-user"></i>
-                            ${patient.first_name} ${patient.last_name}
-                        </h2>
-                        <button class="modal-close">&times;</button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="patient-details">
-                            <div class="patient-info">
-                                <div class="form-row">
-                                    <div class="form-group">
-                                        <label>Nom:</label>
-                                        <span>${patient.last_name}</span>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Prénom:</label>
-                                        <span>${patient.first_name}</span>
-                                    </div>
-                                </div>
-                                <div class="form-row">
-                                    <div class="form-group">
-                                        <label>Date de naissance:</label>
-                                        <span>${patient.birth_date ? new Date(patient.birth_date).toLocaleDateString('fr-FR') : 'Non renseigné'}</span>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Téléphone:</label>
-                                        <span>${patient.phone || 'Non renseigné'}</span>
-                                    </div>
-                                </div>
-                                <div class="form-row">
-                                    <div class="form-group">
-                                        <label>Email:</label>
-                                        <span>${patient.email || 'Non renseigné'}</span>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Adresse:</label>
-                                        <span>${patient.address || 'Non renseigné'}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="patient-section">
-                                <h3>Plans de traitement</h3>
-                                <div id="patient-treatment-plans">
-                                    ${data.treatment_plans.length === 0 ? 'Aucun plan de traitement' : 
-                                      data.treatment_plans.map(plan => {
-                                          let planData = {};
-                                          try {
-                                              planData = JSON.parse(plan.plan_data);
-                                          } catch (e) {
-                                              planData = { treatment_sequence: [] };
-                                          }
-                                          
-                                          return `
-                                            <div class="treatment-plan-item" data-plan-id="${plan.id}">
-                                                <div class="treatment-plan-header">
-                                                    <strong>Plan du ${this.formatDate(plan.created_at)}</strong>
-                                                    <div class="treatment-plan-actions">
-                                                        <button class="btn btn-sm btn-primary" onclick="practiceManager.generateDevisFromPlan('${plan.id}', '${patientId}')">
-                                                            <i class="fas fa-file-invoice"></i> Générer Devis
-                                                        </button>
-                                                        <button class="btn btn-sm btn-success patient-education-btn" onclick="practiceManager.generatePatientEducationFromPlan('${plan.id}', '${patientId}')">
-                                                            <i class="fas fa-graduation-cap"></i> Éducation Patient
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                <p><strong>Consultation:</strong> ${plan.consultation_text || 'Non renseigné'}</p>
-                                                ${planData.treatment_sequence && planData.treatment_sequence.length > 0 ? `
-                                                    <div class="treatment-sequence-summary">
-                                                        <h5>Séquence de traitement:</h5>
-                                                        <ul>
-                                                            ${planData.treatment_sequence.slice(0, 3).map(step => `
-                                                                <li>${step.traitement} - ${step.duree}</li>
-                                                            `).join('')}
-                                                            ${planData.treatment_sequence.length > 3 ? `<li>... et ${planData.treatment_sequence.length - 3} autres</li>` : ''}
-                                                        </ul>
-                                                    </div>
-                                                ` : ''}
-                                                <div class="treatment-plan-meta">
-                                                    <small>Créé le ${this.formatDate(plan.created_at)}</small>
-                                                </div>
-                                            </div>
-                                          `;
-                                      }).join('')}
-                                </div>
-                            </div>
-                            
-                            <div class="patient-section">
-                                <h3>Devis du patient</h3>
-                                <div id="patient-devis-list">
-                                    <div class="loading">Chargement des devis...</div>
-                                </div>
-                            </div>
-                            
-                            <div class="patient-section">
-                                <h3>Documents éducatifs</h3>
-                                <div id="patient-education-list">
-                                    <div class="loading">Chargement des documents éducatifs...</div>
-                                </div>
-                            </div>
-                            
-                            <div class="patient-section">
-                                <h3>Factures du patient</h3>
-                                <div id="patient-invoices-list">
-                                    <div class="loading">Chargement des factures...</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" onclick="practiceManager.editPatient('${patientId}')">
-                            <i class="fas fa-edit"></i> Modifier
-                        </button>
-                    </div>
-                `);
-                
-                this.showModal(modal);
-                
-                // Load devis and invoices after modal is shown
-                setTimeout(() => {
-                    if (window.dentalAI && typeof window.dentalAI.loadPatientDevis === 'function') {
-                        window.dentalAI.loadPatientDevis(patientId);
-                    }
-                    if (window.dentalAI && typeof window.dentalAI.loadPatientInvoices === 'function') {
-                        window.dentalAI.loadPatientInvoices(patientId);
-                    }
-                    if (window.practiceManager && typeof window.practiceManager.loadPatientEducation === 'function') {
-                        window.practiceManager.loadPatientEducation(patientId);
-                    }
-                }, 100);
-                
-            } else {
-                throw new Error(data.error);
-            }
-        } catch (error) {
-            console.error('Error viewing patient:', error);
-            this.showNotification('Erreur lors du chargement du patient', 'error');
-        }
-    }
-
-    editPatient(patientId) {
-        this.hideModal(document.querySelector('.modal.show'));
-        this.showPatientModal(patientId);
-    }
-
-    // === SCHEDULE MANAGEMENT ===
-
-    async loadSchedule() {
-        try {
-            const weekStart = this.formatDate(this.currentWeekStart);
-            const response = await fetch(`/api/appointments/?week_start=${weekStart}`);
-            const data = await response.json();
-
-            if (data.status === 'success') {
-                this.appointments = data.appointments;
-                this.renderSchedule();
-                this.updateWeekDisplay();
-            } else {
-                console.error('Failed to load schedule:', data.message);
-            }
-        } catch (error) {
-            console.error('Error loading schedule:', error);
-        }
-    }
-
-    renderSchedule() {
-        const container = document.getElementById('schedule-grid');
-        if (!container) return;
-
-        // Create header with days
-        const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
-        const hours = Array.from({length: 9}, (_, i) => i + 9); // 9 AM to 5 PM
-
-        let html = '<div class="schedule-time-header"></div>';
-        for (let day = 0; day < 7; day++) {
-            const date = new Date(this.currentWeekStart);
-            date.setDate(date.getDate() + day);
-            const isToday = this.isToday(date);
-            
-            html += `
-                <div class="schedule-day-header ${isToday ? 'today' : ''}">
-                    <div class="schedule-day-name">${days[day]}</div>
-                    <div class="schedule-day-date">${date.getDate()}/${date.getMonth() + 1}</div>
-                </div>
-            `;
-        }
-
-        // Create time slots and appointments
-        for (const hour of hours) {
-            html += `<div class="schedule-time-slot">${hour}:00</div>`;
-            
-            for (let day = 0; day < 7; day++) {
-                const date = new Date(this.currentWeekStart);
-                date.setDate(date.getDate() + day);
-                const dateStr = this.formatDate(date);
-                const isToday = this.isToday(date);
-                
-                const dayAppointments = this.appointments.filter(apt => 
-                    apt.appointment_date === dateStr && 
-                    parseInt(apt.appointment_time.split(':')[0]) === hour
-                );
-
-                // Sort appointments by time within the hour
-                dayAppointments.sort((a, b) => {
-                    const timeA = a.appointment_time.split(':');
-                    const timeB = b.appointment_time.split(':');
-                    return (parseInt(timeA[0]) * 60 + parseInt(timeA[1])) - (parseInt(timeB[0]) * 60 + parseInt(timeB[1]));
-                });
-
-                // Check for conflicts in this hour
-                const hasConflict = this.checkHourConflicts(dayAppointments);
-
-                html += `
-                    <div class="schedule-cell ${isToday ? 'today' : ''}" 
-                         data-date="${dateStr}" 
-                         data-time="${hour}:00"
-                         data-conflict="${hasConflict}"
-                         ondrop="practiceManager.handleDrop(event)"
-                         ondragover="practiceManager.handleDragOver(event)"
-                         onclick="practiceManager.showAppointmentModal('${dateStr}', '${hour}:00')">
-                        ${this.renderAppointmentsInHour(dayAppointments, hour)}
-                    </div>
-                `;
-            }
-        }
-
-        container.innerHTML = html;
-    }
-
-    renderAppointmentsInHour(appointments, hour) {
-        if (appointments.length === 0) return '';
-
-        let html = '';
-        let hasConflict = false;
-        
-        // Check for time conflicts
-        for (let i = 0; i < appointments.length; i++) {
-            for (let j = i + 1; j < appointments.length; j++) {
-                const apt1 = appointments[i];
-                const apt2 = appointments[j];
-                
-                const [h1, m1] = apt1.appointment_time.split(':').map(Number);
-                const [h2, m2] = apt2.appointment_time.split(':').map(Number);
-                
-                const start1 = m1;
-                const end1 = m1 + (apt1.duration_minutes || 60);
-                const start2 = m2;
-                const end2 = m2 + (apt2.duration_minutes || 60);
-                
-                // Check for overlap
-                if (start1 < end2 && start2 < end1) {
-                    hasConflict = true;
-                    break;
-                }
-            }
-            if (hasConflict) break;
-        }
-
-        for (const apt of appointments) {
-            const [aptHour, aptMinute] = apt.appointment_time.split(':').map(Number);
-            const duration = apt.duration_minutes || 60;
-            
-            // Calculate position within the hour (0-60 minutes)
-            const startMinute = aptMinute;
-            const heightPercentage = (duration / 60) * 100; // Height as percentage of hour slot
-            const topOffset = (startMinute / 60) * 100; // Top position as percentage
-            
-            // Add conflict class if there's an overlap
-            const conflictClass = hasConflict ? 'conflict' : '';
-            
-            html += `
-                <div class="appointment-block ${apt.status} ${conflictClass}" 
-                     data-appointment-id="${apt.id}"
-                     data-duration="${duration}"
-                     draggable="true"
-                     ondragstart="practiceManager.handleDragStart(event)"
-                     onclick="event.stopPropagation(); practiceManager.showAppointmentDetails('${apt.id}')"
-                     style="height: ${heightPercentage}%; top: ${topOffset}%; position: absolute; width: calc(100% - 8px); left: 4px; z-index: 1;">
-                    <div class="appointment-patient">${apt.first_name} ${apt.last_name}</div>
-                    <div class="appointment-treatment">${apt.treatment_type}</div>
-                    <div class="appointment-time">${apt.appointment_time} (${duration}min)</div>
-                </div>
-            `;
-        }
-
-        return html;
-    }
-
-    handleDragStart(event) {
-        const appointmentId = event.target.dataset.appointmentId;
-        event.dataTransfer.setData('text/plain', appointmentId);
-        event.target.classList.add('dragging');
-    }
-
-    handleDragOver(event) {
-        event.preventDefault();
-        event.currentTarget.classList.add('drag-over');
-    }
-
-    handleDrop(event) {
-        event.preventDefault();
-        event.currentTarget.classList.remove('drag-over');
-        
-        const appointmentId = event.dataTransfer.getData('text/plain');
-        const newDate = event.currentTarget.dataset.date;
-        const newTime = event.currentTarget.dataset.time;
-        
-        this.moveAppointment(appointmentId, newDate, newTime);
-    }
-
-    async moveAppointment(appointmentId, newDate, newTime) {
-        try {
-            const response = await fetch(`/api/appointments/${appointmentId}/move`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    new_date: newDate,
-                    new_time: newTime
-                })
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                this.showNotification('Rendez-vous déplacé avec succès', 'success');
-                this.loadSchedule(); // Refresh the schedule
-            } else {
-                if (response.status === 409) {
-                    // Conflict - show available slots
-                    this.showNotification(`Conflit: ${result.error}`, 'error');
-                    if (result.available_slots) {
-                        this.showAvailableSlots(newDate, result.available_slots);
-                    }
-                } else {
-                    this.showNotification(`Erreur: ${result.error}`, 'error');
-                }
-            }
-        } catch (error) {
-            console.error('Error moving appointment:', error);
-            this.showNotification('Erreur lors du déplacement', 'error');
-        }
-    }
-
-    showAvailableSlots(date, availableSlots) {
-        const modal = this.createModal(`
-            <div class="available-slots-modal">
-                <h3>Créneaux disponibles pour le ${date}</h3>
-                <div class="slots-grid">
-                    ${availableSlots.map(slot => `
-                        <button class="slot-btn" onclick="practiceManager.selectTimeSlot('${date}', '${slot}')">
-                            ${slot}
-                        </button>
-                    `).join('')}
-                </div>
-                <div class="modal-actions">
-                    <button onclick="practiceManager.hideModal(document.querySelector('.modal'))" class="btn btn-secondary">
-                        Annuler
-                    </button>
-                </div>
-            </div>
-        `);
-        this.showModal(modal);
-    }
-
-    async showAppointmentDetails(appointmentId) {
-        try {
-            const response = await fetch(`/api/appointments/${appointmentId}/details`);
-            const result = await response.json();
-
-            if (result.success) {
-                const appointment = result.appointment;
-                const modal = this.createModal(`
-                    <div class="appointment-details-modal">
-                        <h3><i class="fas fa-calendar-check"></i> Détails du Rendez-vous</h3>
-                        
-                        <div class="appointment-info">
-                            <div class="info-section">
-                                <h4><i class="fas fa-user"></i> Patient</h4>
-                                <p><strong>Nom:</strong> ${appointment.first_name} ${appointment.last_name}</p>
-                                <p><strong>Téléphone:</strong> ${appointment.phone || 'N/A'}</p>
-                                <p><strong>Email:</strong> ${appointment.email || 'N/A'}</p>
-                                <p><strong>Date de naissance:</strong> ${appointment.birth_date || 'N/A'}</p>
-                            </div>
-                            
-                            <div class="info-section">
-                                <h4><i class="fas fa-calendar"></i> Rendez-vous</h4>
-                                <p><strong>Date:</strong> ${new Date(appointment.appointment_date).toLocaleDateString('fr-FR')}</p>
-                                <p><strong>Heure:</strong> ${appointment.appointment_time}</p>
-                                <p><strong>Durée:</strong> ${appointment.duration_minutes} minutes</p>
-                                <p><strong>Statut:</strong> <span class="status-badge ${appointment.status}">${this.getStatusText(appointment.status)}</span></p>
-                            </div>
-                            
-                            <div class="info-section">
-                                <h4><i class="fas fa-tooth"></i> Traitement</h4>
-                                <p><strong>Type:</strong> ${appointment.treatment_type}</p>
-                                <p><strong>Praticien:</strong> ${appointment.doctor}</p>
-                                ${appointment.notes ? `<p><strong>Notes:</strong> ${appointment.notes}</p>` : ''}
-                            </div>
-                            
-                            ${appointment.treatment_plan ? `
-                                <div class="info-section">
-                                    <h4><i class="fas fa-clipboard-list"></i> Plan de Traitement</h4>
-                                    <p><strong>Consultation:</strong> ${appointment.consultation_text || 'N/A'}</p>
-                                    ${appointment.treatment_plan.treatment_sequence ? `
-                                        <div class="treatment-sequence-preview">
-                                            <h5>Séquence de traitement:</h5>
-                                            <ul>
-                                                ${appointment.treatment_plan.treatment_sequence.map(step => `
-                                                    <li>${step.traitement} - ${step.duree}</li>
-                                                `).join('')}
-                                            </ul>
-                                        </div>
-                                    ` : ''}
-                                </div>
-                            ` : ''}
-                        </div>
-                        
-                        <div class="modal-actions">
-                            <button onclick="practiceManager.editAppointment('${appointmentId}')" class="btn btn-primary">
-                                <i class="fas fa-edit"></i> Modifier
-                            </button>
-                            <button onclick="practiceManager.cancelAppointment('${appointmentId}')" class="btn btn-danger">
-                                <i class="fas fa-times"></i> Annuler
-                            </button>
-                            <button onclick="practiceManager.hideModal(document.querySelector('.modal'))" class="btn btn-secondary">
-                                <i class="fas fa-times"></i> Fermer
-                            </button>
-                        </div>
-                    </div>
-                `);
-                this.showModal(modal);
-            } else {
-                this.showNotification(`Erreur: ${result.error}`, 'error');
-            }
-        } catch (error) {
-            console.error('Error loading appointment details:', error);
-            this.showNotification('Erreur lors du chargement des détails', 'error');
-        }
-    }
-
-    getStatusText(status) {
-        const statusMap = {
-            'scheduled': 'Programmé',
-            'completed': 'Terminé',
-            'cancelled': 'Annulé',
-            'no-show': 'Absence'
-        };
-        return statusMap[status] || status;
-    }
-
-    async cancelAppointment(appointmentId) {
-        if (!confirm('Êtes-vous sûr de vouloir annuler ce rendez-vous?')) {
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/appointments/${appointmentId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    status: 'cancelled'
-                })
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                this.showNotification('Rendez-vous annulé', 'success');
-                this.hideModal(document.querySelector('.modal'));
-                this.loadSchedule();
-            } else {
-                this.showNotification(`Erreur: ${result.error}`, 'error');
-            }
-        } catch (error) {
-            console.error('Error cancelling appointment:', error);
-            this.showNotification('Erreur lors de l\'annulation', 'error');
-        }
-    }
-
-    editAppointment(appointmentId) {
-        // Close current modal and show edit modal
-        this.hideModal(document.querySelector('.modal'));
-        // You can implement edit functionality here
-        this.showNotification('Fonction de modification à implémenter', 'info');
-    }
-
-    selectTimeSlot(date, time) {
-        // This method is called when user selects a time slot from available slots
-        const appointmentId = this.draggedAppointmentId;
-        if (appointmentId) {
-            this.hideModal(document.querySelector('.modal'));
-            this.moveAppointment(appointmentId, date, time);
-        }
-    }
-
-    navigateWeek(direction) {
-        const newDate = new Date(this.currentWeekStart);
-        newDate.setDate(newDate.getDate() + (direction * 7));
-        this.currentWeekStart = newDate;
-        this.loadSchedule();
-    }
-
-    updateWeekDisplay() {
-        const display = document.getElementById('current-week-display');
-        if (display) {
-            const endDate = new Date(this.currentWeekStart);
-            endDate.setDate(endDate.getDate() + 6);
-            
-            display.textContent = `Semaine du ${this.formatDate(this.currentWeekStart)} au ${this.formatDate(endDate)}`;
-        }
-    }
-
-    showAppointmentModal(date = '', time = '') {
-        const modal = this.createModal(`
-            <div class="modal-header">
-                <h2 class="modal-title">
-                    <i class="fas fa-calendar-plus"></i>
-                    Nouveau Rendez-vous
-                </h2>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="appointment-form">
-                    <div class="form-group">
-                        <label class="form-label">Patient *</label>
-                        <select class="form-control" name="patient_id" required>
-                            <option value="">Sélectionner un patient</option>
-                            ${this.patients.map(p => `
-                                <option value="${p.id}">${p.first_name} ${p.last_name}</option>
-                            `).join('')}
-                        </select>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Date *</label>
-                            <input type="date" class="form-control" name="appointment_date" required 
-                                   value="${date}">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Heure *</label>
-                            <input type="time" class="form-control" name="appointment_time" required 
-                                   value="${time}">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Durée (minutes)</label>
-                            <input type="number" class="form-control" name="duration_minutes" value="60" min="15" step="15">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Docteur</label>
-                            <input type="text" class="form-control" name="doctor" value="Dr.">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Type de traitement</label>
-                        <input type="text" class="form-control" name="treatment_type" 
-                               placeholder="Consultation, Nettoyage, etc.">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Notes</label>
-                        <textarea class="form-control" name="notes" rows="3"></textarea>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="practiceManager.hideModal(this.closest('.modal'))">
-                    Annuler
-                </button>
-                <button class="btn btn-primary" onclick="practiceManager.saveAppointment()">
-                    <i class="fas fa-save"></i>
-                    Créer
-                </button>
-            </div>
-        `);
-        
-        this.showModal(modal);
-    }
-
-    async saveAppointment() {
-        const form = document.getElementById('appointment-form');
-        const formData = new FormData(form);
-        const appointmentData = Object.fromEntries(formData.entries());
-
-        try {
-            const response = await fetch('/api/appointments', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(appointmentData)
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.hideModal(document.querySelector('.modal.show'));
-                this.loadSchedule();
-                this.showNotification(data.message || 'Rendez-vous créé avec succès', 'success');
-            } else {
-                this.showNotification(data.error || 'Erreur lors de la création', 'error');
-            }
-        } catch (error) {
-            console.error('Error saving appointment:', error);
-            this.showNotification('Erreur lors de la création', 'error');
-        }
-    }
-
-    // === UTILITY METHODS ===
-
-    createModal(content) {
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.innerHTML = `<div class="modal-content">${content}</div>`;
-        document.body.appendChild(modal);
-        return modal;
-    }
-
-    showModal(modal) {
-        modal.classList.add('show');
-    }
-
-    hideModal(modal) {
-        if (modal) {
-            modal.classList.remove('show');
-            setTimeout(() => {
-                if (modal.parentNode) {
-                    modal.parentNode.removeChild(modal);
-                }
-            }, 300);
-        }
-    }
-
-    showNotification(message, type = 'info') {
-        // Remove existing notifications
-        const existingNotifications = document.querySelectorAll('.notification');
-        existingNotifications.forEach(notif => notif.remove());
-        
-        // Create new notification
-        const notification = document.createElement('div');
-        notification.className = `notification ${type}`;
-        notification.textContent = message;
-        
-        // Add to document
-        document.body.appendChild(notification);
-        
-        // Auto-remove after 5 seconds
-            setTimeout(() => {
-                if (notification.parentNode) {
-                notification.style.animation = 'slideOut 0.3s ease';
-                setTimeout(() => notification.remove(), 300);
-                }
-        }, 5000);
-    }
-
-    formatDate(date) {
-        if (typeof date === 'string') {
-            date = new Date(date);
-        }
-        return date.toISOString().split('T')[0];
-    }
-
-    isToday(date) {
-        const today = new Date();
-        return date.toDateString() === today.toDateString();
-    }
-
-    getWeekStart(date) {
-        const d = new Date(date);
-        const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        return new Date(d.setDate(diff));
-    }
-
-    checkHourConflicts(appointments) {
-        if (appointments.length < 2) return false;
-        
-        // Check for time conflicts
-        for (let i = 0; i < appointments.length; i++) {
-            for (let j = i + 1; j < appointments.length; j++) {
-                const apt1 = appointments[i];
-                const apt2 = appointments[j];
-                
-                const [h1, m1] = apt1.appointment_time.split(':').map(Number);
-                const [h2, m2] = apt2.appointment_time.split(':').map(Number);
-                
-                const start1 = m1;
-                const end1 = m1 + (apt1.duration_minutes || 60);
-                const start2 = m2;
-                const end2 = m2 + (apt2.duration_minutes || 60);
-                
-                // Check for overlap
-                if (start1 < end2 && start2 < end1) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    async generateDevisFromPlan(planId, patientId) {
-        try {
-            // Get the treatment plan details
-            const response = await fetch(`/api/patients/${patientId}`);
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error('Impossible de charger les détails du patient');
-            }
-            
-            const treatmentPlan = data.treatment_plans.find(plan => plan.id === planId);
-            if (!treatmentPlan) {
-                throw new Error('Plan de traitement non trouvé');
-            }
-            
-            let planData = {};
-            try {
-                planData = JSON.parse(treatmentPlan.plan_data);
-            } catch (e) {
-                throw new Error('Données du plan de traitement invalides');
-            }
-            
-            if (!planData.treatment_sequence || planData.treatment_sequence.length === 0) {
-                throw new Error('Aucune séquence de traitement trouvée');
-            }
-            
-            // Generate devis directly since we already have the patient
-            const devisResponse = await fetch('/api/generate-devis-from-treatment', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    patient_id: patientId,
-                    treatment_plan_id: planId,
-                    treatment_plan: planData  // Send the complete plan data object
-                })
-            });
-            
-            const devisData = await devisResponse.json();
-            
-            if (devisData.success) {
-                this.showNotification('Devis généré avec succès!', 'success');
-                
-                // Show the generated devis details
-                if (window.dentalAI && typeof window.dentalAI.showDevisDetails === 'function') {
-                    window.dentalAI.showDevisDetails(devisData.devis_id);
-                }
-            } else {
-                throw new Error(devisData.error || 'Erreur lors de la génération du devis');
-            }
-            
-        } catch (error) {
-            console.error('Error generating devis:', error);
-            this.showNotification('Erreur: ' + error.message, 'error');
-        }
-    }
-
-    async generatePatientEducationFromPlan(planId, patientId) {
-        try {
-            this.showNotification('Génération du document éducatif en cours...', 'info');
-            
-            // Get treatment plan data
-            const response = await fetch(`/api/patients/${patientId}`);
-            const patientData = await response.json();
-            
-            if (!patientData.success) {
-                throw new Error('Impossible de récupérer les données du patient');
-            }
-            
-            const treatmentPlan = patientData.treatment_plans.find(plan => plan.id === planId);
-            if (!treatmentPlan) {
-                throw new Error('Plan de traitement non trouvé');
-            }
-            
-            let planData = {};
-            try {
-                planData = JSON.parse(treatmentPlan.plan_data);
-            } catch (e) {
-                planData = { treatment_sequence: [] };
-            }
-            
-            // Generate education content
-            const educationResponse = await fetch('/api/generate-patient-education', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    patient_id: patientId,
-                    treatment_plan: {
-                        consultation_text: treatmentPlan.consultation_text,
-                        treatment_sequence: planData.treatment_sequence || []
-                    }
-                })
-            });
-            
-            const educationData = await educationResponse.json();
-            
-            if (educationData.success) {
-                this.showNotification('Document éducatif généré avec succès', 'success');
-                
-                // Show education preview modal
-                const patient = patientData.patient;
-                const patientName = `${patient.first_name} ${patient.last_name}`;
-                
-                this.showEducationDocumentPreview(
-                    educationData.education_content,
-                    patientId,
-                    patientName,
-                    planId // Pass the treatment plan ID
-                );
-            } else {
-                throw new Error(educationData.error || 'Erreur lors de la génération du document éducatif');
-            }
-            
-        } catch (error) {
-            console.error('Error generating patient education:', error);
-            this.showNotification('Erreur: ' + error.message, 'error');
-        }
-    }
-    
-    showEducationDocumentPreview(educationContent, patientId, patientName, treatmentPlanId = null) {
-        // Extract first and last name from patientName for the onclick handlers
-        const nameParts = patientName.split(' ');
-        const firstName = nameParts[0] || '';
-        const lastName = nameParts.slice(1).join(' ') || '';
-        
-        // Show modal with education document preview
-        const modal = this.createModal(`
-            <div class="education-preview-modal">
-                <h3><i class="fas fa-file-alt"></i> Aperçu du Document d'Éducation</h3>
-                <div class="patient-info">
-                    <p><strong>Patient:</strong> ${patientName}</p>
-                    <p><strong>Date:</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
-                </div>
-                <div class="education-content">
-                    <div class="education-editor" contenteditable="true" id="education-editor">
-                        ${educationContent}
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button class="btn btn-secondary" onclick="dentalAI.downloadEducationDocument('${patientId}', '${patientName}')">
-                        <i class="fas fa-download"></i> Télécharger PDF
-                    </button>
-                    <button class="btn btn-secondary" onclick="dentalAI.saveEducationDocument('${patientId}', document.getElementById('education-editor').innerHTML, '${treatmentPlanId || ''}')">
-                        <i class="fas fa-save"></i> Sauvegarder
-                    </button>
-                    <button class="btn btn-secondary" onclick="dentalAI.hideEducationModal()">Fermer</button>
-                </div>
-            </div>
-        `);
-        
-        this.showModal(modal);
-    }
-
-    // PowerPoint Generation Methods
-    setTreatmentExample(text) {
-        const textarea = document.getElementById('treatment-input');
-        if (textarea) {
-            textarea.value = text;
-            textarea.focus();
-        }
-    }
-
-    async processTreatmentPlan() {
-        const textarea = document.getElementById('treatment-input');
-        const text = textarea.value.trim();
-        
-        if (!text) {
-            this.showTreatmentError('Veuillez saisir un plan de traitement');
-            return;
-        }
-        
-        // Show loading state
-        this.setTreatmentLoadingState(true);
-        this.hideTreatmentResults();
-        this.hideTreatmentError();
-        
-        try {
-            const response = await fetch('/api/process-powerpoint', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ text: text })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                this.showTreatmentResults(data.treatments, data.output_file);
-            } else {
-                this.showTreatmentError(data.error || 'Erreur inconnue');
-            }
-        } catch (error) {
-            this.showTreatmentError('Erreur de connexion: ' + error.message);
-        } finally {
-            this.setTreatmentLoadingState(false);
-        }
-    }
-
-    setTreatmentLoadingState(loading) {
-        const btn = document.getElementById('process-treatment-btn');
-        const btnText = document.getElementById('process-btn-text');
-        const btnLoader = document.getElementById('process-btn-loader');
-        
-        if (btn && btnText && btnLoader) {
-            if (loading) {
-                btn.disabled = true;
-                btnText.style.display = 'none';
-                btnLoader.style.display = 'inline-block';
-            } else {
-                btn.disabled = false;
-                btnText.style.display = 'inline-block';
-                btnLoader.style.display = 'none';
-            }
-        }
-    }
-
-    showTreatmentResults(treatments, outputFile) {
-        const resultsDiv = document.getElementById('treatment-results');
-        const resultsContent = document.getElementById('treatment-results-content');
-        const downloadSection = document.getElementById('download-section');
-        const downloadBtn = document.getElementById('download-ppt-btn');
-        
-        if (!resultsDiv || !resultsContent || !downloadSection || !downloadBtn) {
-            console.error('Required elements not found');
-            return;
-        }
-        
-        // Clear previous results
-        resultsContent.innerHTML = '';
-        
-        // Group results by type
-        const validTreatments = treatments.filter(t => t.success);
-        const invalidTeeth = treatments.filter(t => !t.success && t.error && t.error.includes('invalide'));
-        const failedTreatments = treatments.filter(t => !t.success && (!t.error || !t.error.includes('invalide')));
-        
-        // Display successful treatments
-        if (validTreatments.length > 0) {
-            const successSection = document.createElement('div');
-            successSection.className = 'treatment-success-section';
-            successSection.innerHTML = `
-                <h4 class="success-header">✅ Traitements appliqués avec succès</h4>
-                <div class="treatment-grid">
-                    ${validTreatments.map(treatment => `
-                        <div class="treatment-result success">
-                            <div class="treatment-info">
-                                <strong>Dent ${treatment.tooth}:</strong> ${treatment.treatment}
-                            </div>
-                            <div class="treatment-status status-success">
-                                <i class="fas fa-check-circle"></i> Appliqué
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-            resultsContent.appendChild(successSection);
-        }
-        
-        // Display invalid teeth
-        if (invalidTeeth.length > 0) {
-            const invalidSection = document.createElement('div');
-            invalidSection.className = 'treatment-invalid-section';
-            invalidSection.innerHTML = `
-                <h4 class="invalid-header">⚠️ Numéros de dents invalides</h4>
-                <div class="dental-info">
-                    <p><strong>Système FDI:</strong> Les dents valides sont 11-18, 21-28, 31-38, 41-48</p>
-                </div>
-                <div class="treatment-grid">
-                    ${invalidTeeth.map(treatment => `
-                        <div class="treatment-result invalid">
-                            <div class="treatment-info">
-                                <strong>Dent ${treatment.tooth}:</strong> ${treatment.treatment}
-                            </div>
-                            <div class="treatment-status status-invalid">
-                                <i class="fas fa-exclamation-triangle"></i> Dent inexistante
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-            resultsContent.appendChild(invalidSection);
-        }
-        
-        // Display failed treatments
-        if (failedTreatments.length > 0) {
-            const failedSection = document.createElement('div');
-            failedSection.className = 'treatment-failed-section';
-            failedSection.innerHTML = `
-                <h4 class="failed-header">❌ Échecs techniques</h4>
-                <div class="treatment-grid">
-                    ${failedTreatments.map(treatment => `
-                        <div class="treatment-result failed">
-                            <div class="treatment-info">
-                                <strong>Dent ${treatment.tooth}:</strong> ${treatment.treatment}
-                                ${treatment.error ? `<br><small class="error-detail">${treatment.error}</small>` : ''}
-                            </div>
-                            <div class="treatment-status status-failed">
-                                <i class="fas fa-times-circle"></i> Échec
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-            resultsContent.appendChild(failedSection);
-        }
-        
-        // Show download button if file was created
-        if (outputFile) {
-            downloadBtn.onclick = () => this.downloadPowerPointFile(outputFile);
-            downloadSection.style.display = 'block';
-        }
-        
-        resultsDiv.style.display = 'block';
-    }
-
-    showTreatmentError(message) {
-        const errorDiv = document.getElementById('treatment-error');
-        const errorMessage = document.getElementById('treatment-error-message');
-        
-        if (errorDiv && errorMessage) {
-            errorMessage.textContent = message;
-            errorDiv.style.display = 'block';
-        }
-    }
-
-    hideTreatmentResults() {
-        const resultsDiv = document.getElementById('treatment-results');
-        if (resultsDiv) {
-            resultsDiv.style.display = 'none';
-        }
-    }
-
-    hideTreatmentError() {
-        const errorDiv = document.getElementById('treatment-error');
-        if (errorDiv) {
-            errorDiv.style.display = 'none';
-        }
-    }
-
-    downloadPowerPointFile(filename) {
-        window.location.href = `/api/download-powerpoint/${filename}`;
-    }
-}
-
-class FinanceManager {
-    constructor() {
-        this.charts = {};
-        this.dashboardData = null;
-        this.invoices = [];
-        this.pricing = [];
-        this.init();
-    }
-
-    init() {
-        this.setupEventListeners();
-    }
-
-    setupEventListeners() {
-        // Dashboard refresh
-        const refreshBtn = document.getElementById('refresh-dashboard');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => this.loadDashboard());
-        }
-
-        // Pricing search
-        const pricingSearch = document.getElementById('pricing-search');
-        if (pricingSearch) {
-            pricingSearch.addEventListener('input', (e) => this.searchPricing(e.target.value));
-        }
-
-        // Pricing category filter
-        const pricingFilter = document.getElementById('pricing-category-filter');
-        if (pricingFilter) {
-            pricingFilter.addEventListener('change', (e) => this.filterPricingByCategory(e.target.value));
-        }
-
-        // Invoice search
-        const invoiceSearch = document.getElementById('invoice-search');
-        if (invoiceSearch) {
-            invoiceSearch.addEventListener('input', (e) => this.searchInvoices(e.target.value));
-        }
-
-        // Invoice status filter
-        const invoiceFilter = document.getElementById('invoice-status-filter');
-        if (invoiceFilter) {
-            invoiceFilter.addEventListener('change', (e) => this.filterInvoicesByStatus(e.target.value));
-        }
-
-        // Create invoice button
-        const createInvoiceBtn = document.getElementById('create-invoice-btn');
-        if (createInvoiceBtn) {
-            createInvoiceBtn.addEventListener('click', () => this.showCreateInvoiceModal());
-        }
-    }
-
-    handleTabSwitch(tabId) {
-        switch (tabId) {
-            case 'finance-dashboard':
-                this.loadDashboard();
-                break;
-            case 'invoices':
-                this.loadInvoices();
-                break;
-            case 'pricing':
-                this.loadPricing();
-                break;
-        }
-    }
-
-    async loadDashboard() {
-        try {
-            const response = await fetch('/api/financial/dashboard');
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this.dashboardData = data.dashboard;
-                this.renderDashboard();
-            } else {
-                throw new Error(data.message);
-            }
-        } catch (error) {
-            console.error('Error loading dashboard:', error);
-            this.showNotification('Erreur lors du chargement du tableau de bord', 'error');
-        }
-    }
-
-    renderDashboard() {
-        if (!this.dashboardData) return;
-
-        // Calculate summary from the data
-        const revenue = this.dashboardData.revenue;
-        const collectionRate = revenue.total > 0 ? (revenue.paid / revenue.total) * 100 : 0;
-        
-        // Update metrics
-        document.getElementById('current-month-revenue').textContent = `${revenue.total.toFixed(2)} CHF`;
-        document.getElementById('pending-payments').textContent = `${revenue.pending.toFixed(2)} CHF`;
-        document.getElementById('collection-rate').textContent = `${collectionRate.toFixed(1)}%`;
-        
-        // Update revenue change (set to 0 for now as we don't have previous month data)
-        const revenueChange = document.getElementById('revenue-change');
-        revenueChange.textContent = '0%';
-        revenueChange.style.color = '#6c757d';
-        // Update top patient (set placeholder for now)
-        const topPatientValue = document.getElementById('top-patient-value');
-        const topPatientName = document.getElementById('top-patient-name');
-        if (topPatientValue) topPatientValue.textContent = '0.00 CHF';
-        if (topPatientName) topPatientName.textContent = 'Aucun patient';
-
-        // Update pending count
-        const pendingCount = this.dashboardData.invoices.pending + this.dashboardData.invoices.partial;
-        const pendingCountEl = document.getElementById('pending-count');
-        if (pendingCountEl) pendingCountEl.textContent = `${pendingCount} factures`;
-
-        // Render charts with available data
-        this.renderRevenueChart();
-        this.renderPaymentStatusChart();
-    }
-
-    renderRevenueChart() {
-        const ctx = document.getElementById('revenue-chart');
-        if (!ctx) return;
-
-        if (this.charts.revenue) {
-            this.charts.revenue.destroy();
-        }
-
-        // Use current month data as a single point
-        const currentMonth = new Date().toLocaleDateString('fr-CH', { month: 'short', year: 'numeric' });
-        const labels = [currentMonth];
-        const revenues = [this.dashboardData.revenue.total];
-
-        this.charts.revenue = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Revenus (CHF)',
-                    data: revenues,
-                    borderColor: '#667eea',
-                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#667eea',
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2,
-                    pointRadius: 6
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return value.toFixed(0) + ' CHF';
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    renderPaymentStatusChart() {
-        const ctx = document.getElementById('payment-status-chart');
-        if (!ctx) return;
-
-        if (this.charts.paymentStatus) {
-            this.charts.paymentStatus.destroy();
-        }
-
-        // Use invoice status data
-        const revenue = this.dashboardData.revenue;
-        const labels = ['Payé', 'En attente'];
-        const amounts = [revenue.paid, revenue.pending];
-
-        this.charts.paymentStatus = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: amounts,
-                    backgroundColor: [
-                        '#ffc107',
-                        '#17a2b8',
-                        '#28a745'
-                    ],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom'
-                    }
-                }
-            }
-        });
-    }
-
-    renderTreatmentsChart() {
-        // Skip for now as we don't have treatment data
-        return;
-
-        this.charts.treatments = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Revenus (CHF)',
-                    data: revenues,
-                    backgroundColor: 'rgba(102, 126, 234, 0.8)',
-                    borderColor: '#667eea',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return value.toFixed(0) + ' CHF';
-                            }
-                        }
-                    },
-                    x: {
-                        ticks: {
-                            maxRotation: 45,
-                            minRotation: 45
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    renderTopPatientsList() {
-        const container = document.getElementById('top-patients-list');
-        if (!container) return;
-
-        // Skip for now as we don't have top patients data
-        container.innerHTML = '<div class="empty-state">Données patients non disponibles</div>';
-        return;
-            <div class="patient-item">
-                <div class="patient-info">
-                    <div class="patient-avatar">
-                        ${patient.patient_name.split(' ').map(n => n[0]).join('')}
-                    </div>
-                    <div class="patient-details">
-                        <h4>${patient.patient_name}</h4>
-                        <p>${patient.invoice_count} factures</p>
-                    </div>
-                </div>
-                <div class="patient-value">
-                    ${patient.total_spent.toFixed(2)} CHF
-                </div>
-            </div>
-        `).join('');
-    }
-
-    async loadInvoices() {
-        try {
-            const [invoicesResponse, devisResponse] = await Promise.all([
-                fetch('/api/financial/invoices'),
-                fetch('/api/financial/devis')
-            ]);
-            
-            const invoicesData = await invoicesResponse.json();
-            const devisData = await devisResponse.json();
-            
-            if (invoicesData.status === 'success' && devisData.status === 'success') {
-                this.invoices = invoicesData.invoices || [];
-                this.devis = devisData.devis || [];
-                this.renderInvoicesAndDevis();
-            } else {
-                throw new Error(invoicesData.message || devisData.message);
-            }
-        } catch (error) {
-            console.error('Error loading invoices and devis:', error);
-            this.showNotification('Erreur lors du chargement des factures et devis', 'error');
-        }
-    }
-
-    renderInvoicesAndDevis() {
-        const container = document.querySelector('.invoices-container');
-        if (!container) return;
-        
-        container.innerHTML = `
-            <div class="invoices-header">
-                <h2><i class="fas fa-file-invoice-dollar"></i> Factures et Devis</h2>
-                <div class="invoices-actions">
-                    <div class="search-container">
-                        <input type="text" id="invoice-search" placeholder="Rechercher une facture ou devis...">
-                        <i class="fas fa-search"></i>
-                    </div>
-                    <select id="document-type-filter" onchange="financeManager.filterByDocumentType(this.value)">
-                        <option value="">Tous les documents</option>
-                        <option value="devis">Devis seulement</option>
-                        <option value="invoices">Factures seulement</option>
-                    </select>
-                    <select id="invoice-status-filter" onchange="financeManager.filterInvoicesByStatus(this.value)">
-                        <option value="">Tous les statuts</option>
-                        <option value="pending">En attente</option>
-                        <option value="partial">Partiellement payé</option>
-                        <option value="paid">Payé</option>
-                        <option value="overdue">En retard</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="invoices-content">
-                <!-- Devis Section -->
-                <div class="documents-section">
-                    <h3><i class="fas fa-file-invoice"></i> Devis</h3>
-                    <div class="devis-grid">
-                        ${this.renderDevisCards()}
-                    </div>
-                </div>
-                
-                <!-- Invoices Section -->
-                <div class="documents-section">
-                    <h3><i class="fas fa-file-invoice-dollar"></i> Factures</h3>
-                    <div class="invoices-table-container">
-                        <table class="invoices-table" id="invoices-table">
-                            <thead>
-                                <tr>
-                                    <th>Numéro</th>
-                                    <th>Patient</th>
-                                    <th>Date</th>
-                                    <th>Montant Total</th>
-                                    <th>LAMal</th>
-                                    <th>Patient</th>
-                                    <th>Statut</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="invoices-tbody">
-                                ${this.renderInvoicesRows()}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        // Setup search functionality
-        const searchInput = document.getElementById('invoice-search');
-        if (searchInput) {
-            searchInput.addEventListener('input', (e) => {
-                this.searchInvoices(e.target.value);
-            });
-        }
-    }
-
-    renderDevisCards() {
-        if (!this.devis || this.devis.length === 0) {
-            return '<div class="empty-state">Aucun devis trouvé</div>';
-        }
-
-        return this.devis.map(devis => `
-            <div class="devis-card" data-status="${devis.status}">
-                <div class="devis-header">
-                    <div class="devis-number">${devis.devis_number}</div>
-                    <div class="devis-status status-badge ${devis.status}">
-                        ${this.getDevisStatusText(devis.status)}
-                    </div>
-                </div>
-                <div class="devis-info">
-                    <p><strong>Patient:</strong> ${devis.patient_name}</p>
-                    <p><strong>Date:</strong> ${new Date(devis.issue_date).toLocaleDateString('fr-FR')}</p>
-                    <p><strong>Valide jusqu'au:</strong> ${new Date(devis.validity_date).toLocaleDateString('fr-FR')}</p>
-                    <p><strong>Montant:</strong> ${devis.total_amount.toFixed(2)} CHF</p>
-                </div>
-                <div class="devis-actions">
-                    <button class="btn btn-sm btn-primary" onclick="window.dentalAI.showDevisDetails('${devis.id}')">
-                        <i class="fas fa-eye"></i> Voir
-                    </button>
-                    <button class="btn btn-sm btn-secondary" onclick="financeManager.downloadDevis('${devis.id}')">
-                        <i class="fas fa-download"></i> PDF
-                    </button>
-                    ${devis.status === 'approved' ? `
-                        <button class="btn btn-sm btn-success" onclick="window.dentalAI.createInvoiceFromDevis('${devis.id}')">
-                            <i class="fas fa-file-invoice-dollar"></i> Facturer
-                        </button>
-                    ` : ''}
-                    <button class="btn btn-sm btn-danger" onclick="window.dentalAI.deleteDevis('${devis.id}')">
-                        <i class="fas fa-trash"></i> Supprimer
-                    </button>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    renderInvoicesRows() {
-        if (!this.invoices || this.invoices.length === 0) {
-            return '<tr><td colspan="8" class="empty-state">Aucune facture trouvée</td></tr>';
-        }
-
-        return this.invoices.map(invoice => `
-            <tr>
-                <td>${invoice.invoice_number}</td>
-                <td>${invoice.patient_name}</td>
-                <td>${this.formatDate(invoice.issue_date)}</td>
-                <td class="price-amount">${invoice.total_amount.toFixed(2)} CHF</td>
-                <td class="price-amount">0.00 CHF</td>
-                <td class="price-amount">${invoice.total_amount.toFixed(2)} CHF</td>
-                <td><span class="invoice-status ${invoice.status}">${this.getStatusText(invoice.status)}</span></td>
-                <td>
-                    <button class="btn btn-sm btn-secondary" onclick="financeManager.viewInvoice('${invoice.id}')">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-info" onclick="financeManager.downloadInvoice('${invoice.id}')">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    ${invoice.status !== 'paid' ? `
-                        <button class="btn btn-sm btn-primary" onclick="financeManager.addPayment('${invoice.id}')">
-                            <i class="fas fa-plus"></i>
-                        </button>
-                    ` : ''}
-                    <button class="btn btn-sm btn-danger" onclick="window.dentalAI.deleteInvoice('${invoice.id}')">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
-            </tr>
-        `).join('');
-    }
-
-    getDevisStatusText(status) {
-        const statusMap = {
-            'pending': 'En attente',
-            'approved': 'Approuvé',
-            'rejected': 'Rejeté',
-            'invoiced': 'Facturé'
-        };
-        return statusMap[status] || status;
-    }
-
-    filterByDocumentType(type) {
-        const devisSection = document.querySelector('.devis-grid').closest('.documents-section');
-        const invoicesSection = document.querySelector('.invoices-table-container').closest('.documents-section');
-        
-        if (type === 'devis') {
-            devisSection.style.display = 'block';
-            invoicesSection.style.display = 'none';
-        } else if (type === 'invoices') {
-            devisSection.style.display = 'none';
-            invoicesSection.style.display = 'block';
-        } else {
-            devisSection.style.display = 'block';
-            invoicesSection.style.display = 'block';
-        }
-    }
-
-    async downloadDevis(devisId) {
-        // Use the existing downloadDevis function from dentalAI
-        if (window.dentalAI && typeof window.dentalAI.downloadDevis === 'function') {
-            window.dentalAI.downloadDevis(devisId);
-        } else {
-            this.showNotification('Erreur: Fonction non disponible', 'error');
-        }
-    }
-
-    async downloadInvoice(invoiceId) {
-        // Use the existing downloadInvoice function from dentalAI
-        if (window.dentalAI && typeof window.dentalAI.downloadInvoice === 'function') {
-            window.dentalAI.downloadInvoice(invoiceId);
-        } else {
-            this.showNotification('Erreur: Fonction non disponible', 'error');
-        }
-    }
-
-    async loadPricing() {
-        try {
-            const response = await fetch('/api/financial/pricing');
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this.pricing = data.pricing;
-                this.renderPricing();
-            } else {
-                throw new Error(data.message);
-            }
-        } catch (error) {
-            console.error('Error loading pricing:', error);
-            this.showNotification('Erreur lors du chargement des tarifs', 'error');
-        }
-    }
-
-    renderPricing() {
-        const tbody = document.getElementById('pricing-tbody');
-        if (!tbody) return;
-
-        tbody.innerHTML = this.pricing.map(item => `
-            <tr>
-                <td><strong>${item.tarmed_code}</strong></td>
-                <td>${item.description_fr}</td>
-                <td><span class="pricing-category">${item.category || 'Non catégorisé'}</span></td>
-                <td class="price-amount">${item.base_price.toFixed(2)} CHF</td>
-                <td class="lamal-not-covered">Non</td>
-                <td>-</td>
-                <td>-</td>
-                <td>${item.unit || ''}</td>
-            </tr>
-        `).join('');
-    }
-
-    searchPricing(term) {
-        const filteredPricing = this.pricing.filter(item => 
-            item.description_fr.toLowerCase().includes(term.toLowerCase()) ||
-            item.tarmed_code.toLowerCase().includes(term.toLowerCase()) ||
-            (item.category && item.category.toLowerCase().includes(term.toLowerCase()))
-        );
-        
-        this.renderFilteredPricing(filteredPricing);
-    }
-
-    filterPricingByCategory(category) {
-        const filteredPricing = category ? 
-            this.pricing.filter(item => item.category === category) : 
-            this.pricing;
-        
-        this.renderFilteredPricing(filteredPricing);
-    }
-
-    renderFilteredPricing(filteredPricing) {
-        const tbody = document.getElementById('pricing-tbody');
-        if (!tbody) return;
-
-        tbody.innerHTML = filteredPricing.map(item => `
-            <tr>
-                <td><strong>${item.tarmed_code}</strong></td>
-                <td>${item.description_fr}</td>
-                <td><span class="pricing-category">${item.category || 'Non catégorisé'}</span></td>
-                <td class="price-amount">${item.base_price.toFixed(2)} CHF</td>
-                <td class="lamal-not-covered">Non</td>
-                <td>-</td>
-                <td>-</td>
-                <td>${item.unit || ''}</td>
-            </tr>
-        `).join('');
-    }
-
-    searchInvoices(term) {
-        const filteredInvoices = this.invoices.filter(invoice => 
-            invoice.invoice_number.toLowerCase().includes(term.toLowerCase()) ||
-            invoice.patient_name.toLowerCase().includes(term.toLowerCase())
-        );
-        
-        this.renderFilteredInvoices(filteredInvoices);
-    }
-
-    filterInvoicesByStatus(status) {
-        const filteredInvoices = status ? 
-            this.invoices.filter(invoice => invoice.status === status) : 
-            this.invoices;
-        
-        this.renderFilteredInvoices(filteredInvoices);
-    }
-
-    renderFilteredInvoices(filteredInvoices) {
-        const tbody = document.getElementById('invoices-tbody');
-        if (!tbody) return;
-
-        tbody.innerHTML = filteredInvoices.map(invoice => `
-            <tr>
-                <td>${invoice.invoice_number}</td>
-                <td>${invoice.patient_name}</td>
-                <td>${this.formatDate(invoice.invoice_date)}</td>
-                <td class="price-amount">${invoice.total_amount_chf.toFixed(2)} CHF</td>
-                <td class="price-amount">${invoice.lamal_amount_chf.toFixed(2)} CHF</td>
-                <td class="price-amount">${invoice.patient_amount_chf.toFixed(2)} CHF</td>
-                <td><span class="invoice-status ${invoice.status}">${this.getStatusText(invoice.status)}</span></td>
-                <td>
-                    <button class="btn btn-sm btn-secondary" onclick="financeManager.viewInvoice('${invoice.id}')">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-primary" onclick="financeManager.addPayment('${invoice.id}')">
-                        <i class="fas fa-plus"></i>
-                    </button>
-                </td>
-            </tr>
-        `).join('');
-    }
-
-    getStatusText(status) {
-        switch (status) {
-            case 'pending': return 'En attente';
-            case 'partial': return 'Partiellement payé';
-            case 'paid': return 'Payé';
-            default: return status;
-        }
-    }
-
-    formatDate(dateString) {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('fr-CH');
-    }
-
-    showNotification(message, type = 'info') {
-        // Remove existing notifications
-        const existingNotifications = document.querySelectorAll('.notification');
-        existingNotifications.forEach(notif => notif.remove());
-        
-        // Create new notification
-        const notification = document.createElement('div');
-        notification.className = `notification ${type}`;
-        notification.textContent = message;
-        
-        // Add to document
-        document.body.appendChild(notification);
-
-        // Auto-remove after 5 seconds
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.style.animation = 'slideOut 0.3s ease';
-                setTimeout(() => notification.remove(), 300);
-            }
-        }, 5000);
-    }
-
-    viewInvoice(invoiceId) {
-        // Use the existing showInvoiceDetails function from dentalAI
-        if (window.dentalAI && typeof window.dentalAI.showInvoiceDetails === 'function') {
-            window.dentalAI.showInvoiceDetails(invoiceId);
-        } else {
-            this.showNotification('Erreur: Fonction non disponible', 'error');
-        }
-    }
-
-    addPayment(invoiceId) {
-        // Use the existing addPaymentToInvoice function from dentalAI
-        if (window.dentalAI && typeof window.dentalAI.addPaymentToInvoice === 'function') {
-            window.dentalAI.addPaymentToInvoice(invoiceId);
-        } else {
-            this.showNotification('Fonctionnalité de paiement à implémenter', 'info');
-        }
-    }
-
-    showCreateInvoiceModal() {
-        // TODO: Implement invoice creation modal
-        console.log('Create new invoice');
-    }
-
-    async deleteDevis(devisId) {
-        if (!confirm('Êtes-vous sûr de vouloir supprimer ce devis ? Cette action est irréversible.')) {
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/devis/${devisId}`, {
-                method: 'DELETE'
-            });
-
-            const data = await response.json();
-            
-            if (data.success) {
-                this.showNotification('Devis supprimé avec succès', 'success');
-                
-                // Refresh the current view
-                if (window.financeManager) {
-                    window.financeManager.loadInvoices();
-                }
-                
-                // Refresh patient view if open
-                const patientModal = document.querySelector('.modal.active');
-                if (patientModal) {
-                    const patientId = patientModal.dataset.patientId;
-                    if (patientId) {
-                        this.loadPatientDevis(patientId);
-                    }
-                }
-            } else {
-                this.showNotification(data.error || 'Erreur lors de la suppression', 'error');
-            }
-        } catch (error) {
-            console.error('Error deleting devis:', error);
-            this.showNotification('Erreur lors de la suppression du devis', 'error');
-        }
-    }
-
-    async deleteInvoice(invoiceId) {
-        if (!confirm('Êtes-vous sûr de vouloir supprimer cette facture ? Cette action est irréversible.')) {
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/invoices/${invoiceId}`, {
-                method: 'DELETE'
-            });
-
-            const data = await response.json();
-            
-            if (data.success) {
-                this.showNotification('Facture supprimée avec succès', 'success');
-                
-                // Refresh the current view
-                if (window.financeManager) {
-                    window.financeManager.loadInvoices();
-                }
-                
-                // Refresh patient view if open
-                const patientModal = document.querySelector('.modal.active');
-                if (patientModal) {
-                    const patientId = patientModal.dataset.patientId;
-                    if (patientId) {
-                        this.loadPatientInvoices(patientId);
-                    }
-                }
-            } else {
-                this.showNotification(data.error || 'Erreur lors de la suppression', 'error');
-            }
-        } catch (error) {
-            console.error('Error deleting invoice:', error);
-            this.showNotification('Erreur lors de la suppression de la facture', 'error');
-        }
-    }
-}
-
+// // PracticeManager class has been moved to /static/js/features/practice/practice-manager.js
+// // class PracticeManager {
+//     constructor() {
+//         this.currentWeekStart = this.getWeekStart(new Date());
+//         this.patients = [];
+//         this.appointments = [];
+//         this.init();
+//     }
+// 
+//     init() {
+//         this.setupEventListeners();
+//         this.loadPatients();
+//         this.loadSchedule();
+//     }
+// 
+//     setupEventListeners() {
+//         // Patient management
+//         document.getElementById('add-patient-btn')?.addEventListener('click', () => this.showPatientModal());
+//         document.getElementById('patient-search')?.addEventListener('input', (e) => this.searchPatients(e.target.value));
+//         
+//         // Schedule management
+//         document.getElementById('prev-week')?.addEventListener('click', () => this.navigateWeek(-1));
+//         document.getElementById('next-week')?.addEventListener('click', () => this.navigateWeek(1));
+//         document.getElementById('add-appointment-btn')?.addEventListener('click', () => this.showAppointmentModal());
+//         
+//         // Modal handling
+//         document.addEventListener('click', (e) => {
+//             if (e.target.classList.contains('modal')) {
+//                 this.hideModal(e.target);
+//             }
+//             if (e.target.classList.contains('modal-close')) {
+//                 this.hideModal(e.target.closest('.modal'));
+//             }
+//         });
+//     }
+// 
+//     // === PATIENT MANAGEMENT ===
+// 
+//     async loadPatients(searchTerm = '') {
+//         try {
+//             const response = await fetch(`/api/patients/?search=${encodeURIComponent(searchTerm)}`);
+//             const data = await response.json();
+//             
+//             if (data.status === 'success') {
+//                 this.patients = data.patients;
+//                 this.renderPatients();
+//             } else {
+//                 console.error('Failed to load patients:', data.message);
+//             }
+//         } catch (error) {
+//             console.error('Error loading patients:', error);
+//         }
+//     }
+// 
+//     renderPatients() {
+//         const container = document.getElementById('patients-list');
+//         if (!container) return;
+// 
+//         if (this.patients.length === 0) {
+//             container.innerHTML = `
+//                 <div class="loading">
+//                     <i class="fas fa-user-plus"></i>
+//                     Aucun patient trouvé. Ajoutez votre premier patient.
+//                 </div>
+//             `;
+//             return;
+//         }
+// 
+//         container.innerHTML = this.patients.map(patient => `
+//             <div class="patient-card" data-patient-id="${patient.id}">
+//                 <div class="patient-card-header">
+//                     <div>
+//                         <h3 class="patient-name">${patient.first_name} ${patient.last_name}</h3>
+//                         <div class="patient-id">#${patient.id.substring(0, 8)}</div>
+//                     </div>
+//                     <div class="patient-actions">
+//                         <button class="btn btn-sm btn-primary" onclick="practiceManager.viewPatient('${patient.id}')">
+//                             <i class="fas fa-eye"></i>
+//                         </button>
+//                         <button class="btn btn-sm btn-secondary" onclick="practiceManager.editPatient('${patient.id}')">
+//                             <i class="fas fa-edit"></i>
+//                         </button>
+//                     </div>
+//                 </div>
+//                 <div class="patient-info">
+//                     ${patient.email ? `<div class="patient-detail"><i class="fas fa-envelope"></i> ${patient.email}</div>` : ''}
+//                     ${patient.phone ? `<div class="patient-detail"><i class="fas fa-phone"></i> ${patient.phone}</div>` : ''}
+//                     ${patient.birth_date ? `<div class="patient-detail"><i class="fas fa-birthday-cake"></i> ${this.formatDate(patient.birth_date)}</div>` : ''}
+//                 </div>
+//                 <div class="patient-stats">
+//                     <div class="patient-stat">
+//                         <div class="patient-stat-value">0</div>
+//                         <div class="patient-stat-label">RDV</div>
+//                     </div>
+//                     <div class="patient-stat">
+//                         <div class="patient-stat-value">0</div>
+//                         <div class="patient-stat-label">Plans</div>
+//                     </div>
+//                     <div class="patient-stat">
+//                         <div class="patient-stat-value">Actif</div>
+//                         <div class="patient-stat-label">Statut</div>
+//                     </div>
+//                 </div>
+//             </div>
+//         `).join('');
+//     }
+// 
+//     searchPatients(term) {
+//         this.loadPatients(term);
+//     }
+// 
+//     showPatientModal(patientId = null) {
+//         const isEdit = patientId !== null;
+//         const patient = isEdit ? this.patients.find(p => p.id === patientId) : null;
+//         
+//         const modal = this.createModal(`
+//             <div class="modal-header">
+//                 <h2 class="modal-title">
+//                     <i class="fas fa-user"></i>
+//                     ${isEdit ? 'Modifier Patient' : 'Nouveau Patient'}
+//                 </h2>
+//                 <button class="modal-close">&times;</button>
+//             </div>
+//             <div class="modal-body">
+//                 <form id="patient-form">
+//                     <div class="form-row">
+//                         <div class="form-group">
+//                             <label class="form-label">Prénom *</label>
+//                             <input type="text" class="form-control" name="first_name" required 
+//                                    value="${patient?.first_name || ''}">
+//                         </div>
+//                         <div class="form-group">
+//                             <label class="form-label">Nom *</label>
+//                             <input type="text" class="form-control" name="last_name" required 
+//                                    value="${patient?.last_name || ''}">
+//                         </div>
+//                     </div>
+//                     <div class="form-row">
+//                         <div class="form-group">
+//                             <label class="form-label">Email</label>
+//                             <input type="email" class="form-control" name="email" 
+//                                    value="${patient?.email || ''}">
+//                         </div>
+//                         <div class="form-group">
+//                             <label class="form-label">Téléphone</label>
+//                             <input type="tel" class="form-control" name="phone" 
+//                                    value="${patient?.phone || ''}">
+//                         </div>
+//                     </div>
+//                     <div class="form-group">
+//                         <label class="form-label">Date de naissance</label>
+//                         <input type="date" class="form-control" name="birth_date" 
+//                                value="${patient?.birth_date || ''}">
+//                     </div>
+//                     <div class="form-group">
+//                         <label class="form-label">Adresse</label>
+//                         <textarea class="form-control" name="address" rows="3">${patient?.address || ''}</textarea>
+//                     </div>
+//                     <div class="form-group">
+//                         <label class="form-label">Antécédents médicaux</label>
+//                         <textarea class="form-control" name="medical_history" rows="3">${patient?.medical_history || ''}</textarea>
+//                     </div>
+//                     <div class="form-group">
+//                         <label class="form-label">Allergies</label>
+//                         <textarea class="form-control" name="allergies" rows="2">${patient?.allergies || ''}</textarea>
+//                     </div>
+//                     <div class="form-group">
+//                         <label class="form-label">Contact d'urgence</label>
+//                         <input type="text" class="form-control" name="emergency_contact" 
+//                                value="${patient?.emergency_contact || ''}">
+//                     </div>
+//                     <div class="form-group">
+//                         <label class="form-label">Informations assurance</label>
+//                         <textarea class="form-control" name="insurance_info" rows="2">${patient?.insurance_info || ''}</textarea>
+//                     </div>
+//                     <div class="form-group">
+//                         <label class="form-label">Notes</label>
+//                         <textarea class="form-control" name="notes" rows="3">${patient?.notes || ''}</textarea>
+//                     </div>
+//                 </form>
+//             </div>
+//             <div class="modal-footer">
+//                 <button class="btn btn-secondary" onclick="practiceManager.hideModal(this.closest('.modal'))">
+//                     Annuler
+//                 </button>
+//                 <button class="btn btn-primary" onclick="practiceManager.savePatient('${patientId || ''}')">
+//                     <i class="fas fa-save"></i>
+//                     ${isEdit ? 'Mettre à jour' : 'Créer'}
+//                 </button>
+//             </div>
+//         `);
+//         
+//         this.showModal(modal);
+//     }
+// 
+//     async savePatient(patientId = '') {
+//         const form = document.getElementById('patient-form');
+//         const formData = new FormData(form);
+//         const patientData = Object.fromEntries(formData.entries());
+// 
+//         try {
+//             const isEdit = patientId !== '';
+//             const url = isEdit ? `/api/patients/${patientId}` : '/api/patients';
+//             const method = isEdit ? 'PUT' : 'POST';
+// 
+//             const response = await fetch(url, {
+//                 method: method,
+//                 headers: {
+//                     'Content-Type': 'application/json',
+//                 },
+//                 body: JSON.stringify(patientData)
+//             });
+// 
+//             const data = await response.json();
+// 
+//             if (data.success) {
+//                 this.hideModal(document.querySelector('.modal.show'));
+//                 this.loadPatients();
+//                 this.showNotification(data.message || 'Patient sauvegardé avec succès', 'success');
+//             } else {
+//                 this.showNotification(data.error || 'Erreur lors de la sauvegarde', 'error');
+//             }
+//         } catch (error) {
+//             console.error('Error saving patient:', error);
+//             this.showNotification('Erreur lors de la sauvegarde', 'error');
+//         }
+//     }
+// 
+//     async viewPatient(patientId) {
+//         try {
+//             const response = await fetch(`/api/patients/${patientId}`);
+//             const data = await response.json();
+// 
+//             if (data.success) {
+//                 const patient = data.patient;
+//                 const modal = this.createModal(`
+//                     <div class="modal-header">
+//                         <h2 class="modal-title">
+//                             <i class="fas fa-user"></i>
+//                             ${patient.first_name} ${patient.last_name}
+//                         </h2>
+//                         <button class="modal-close">&times;</button>
+//                     </div>
+//                     <div class="modal-body">
+//                         <div class="patient-details">
+//                             <div class="patient-info">
+//                                 <div class="form-row">
+//                                     <div class="form-group">
+//                                         <label>Nom:</label>
+//                                         <span>${patient.last_name}</span>
+//                                     </div>
+//                                     <div class="form-group">
+//                                         <label>Prénom:</label>
+//                                         <span>${patient.first_name}</span>
+//                                     </div>
+//                                 </div>
+//                                 <div class="form-row">
+//                                     <div class="form-group">
+//                                         <label>Date de naissance:</label>
+//                                         <span>${patient.birth_date ? new Date(patient.birth_date).toLocaleDateString('fr-FR') : 'Non renseigné'}</span>
+//                                     </div>
+//                                     <div class="form-group">
+//                                         <label>Téléphone:</label>
+//                                         <span>${patient.phone || 'Non renseigné'}</span>
+//                                     </div>
+//                                 </div>
+//                                 <div class="form-row">
+//                                     <div class="form-group">
+//                                         <label>Email:</label>
+//                                         <span>${patient.email || 'Non renseigné'}</span>
+//                                     </div>
+//                                     <div class="form-group">
+//                                         <label>Adresse:</label>
+//                                         <span>${patient.address || 'Non renseigné'}</span>
+//                                     </div>
+//                                 </div>
+//                             </div>
+//                             
+//                             <div class="patient-section">
+//                                 <h3>Plans de traitement</h3>
+//                                 <div id="patient-treatment-plans">
+//                                     ${data.treatment_plans.length === 0 ? 'Aucun plan de traitement' : 
+//                                       data.treatment_plans.map(plan => {
+//                                           let planData = {};
+//                                           try {
+//                                               planData = JSON.parse(plan.plan_data);
+//                                           } catch (e) {
+//                                               planData = { treatment_sequence: [] };
+//                                           }
+//                                           
+//                                           return `
+//                                             <div class="treatment-plan-item" data-plan-id="${plan.id}">
+//                                                 <div class="treatment-plan-header">
+//                                                     <strong>Plan du ${this.formatDate(plan.created_at)}</strong>
+//                                                     <div class="treatment-plan-actions">
+//                                                         <button class="btn btn-sm btn-primary" onclick="practiceManager.generateDevisFromPlan('${plan.id}', '${patientId}')">
+//                                                             <i class="fas fa-file-invoice"></i> Générer Devis
+//                                                         </button>
+//                                                         <button class="btn btn-sm btn-success patient-education-btn" onclick="practiceManager.generatePatientEducationFromPlan('${plan.id}', '${patientId}')">
+//                                                             <i class="fas fa-graduation-cap"></i> Éducation Patient
+//                                                         </button>
+//                                                     </div>
+//                                                 </div>
+//                                                 <p><strong>Consultation:</strong> ${plan.consultation_text || 'Non renseigné'}</p>
+//                                                 ${planData.treatment_sequence && planData.treatment_sequence.length > 0 ? `
+//                                                     <div class="treatment-sequence-summary">
+//                                                         <h5>Séquence de traitement:</h5>
+//                                                         <ul>
+//                                                             ${planData.treatment_sequence.slice(0, 3).map(step => `
+//                                                                 <li>${step.traitement} - ${step.duree}</li>
+//                                                             `).join('')}
+//                                                             ${planData.treatment_sequence.length > 3 ? `<li>... et ${planData.treatment_sequence.length - 3} autres</li>` : ''}
+//                                                         </ul>
+//                                                     </div>
+//                                                 ` : ''}
+//                                                 <div class="treatment-plan-meta">
+//                                                     <small>Créé le ${this.formatDate(plan.created_at)}</small>
+//                                                 </div>
+//                                             </div>
+//                                           `;
+//                                       }).join('')}
+//                                 </div>
+//                             </div>
+//                             
+//                             <div class="patient-section">
+//                                 <h3>Devis du patient</h3>
+//                                 <div id="patient-devis-list">
+//                                     <div class="loading">Chargement des devis...</div>
+//                                 </div>
+//                             </div>
+//                             
+//                             <div class="patient-section">
+//                                 <h3>Documents éducatifs</h3>
+//                                 <div id="patient-education-list">
+//                                     <div class="loading">Chargement des documents éducatifs...</div>
+//                                 </div>
+//                             </div>
+//                             
+//                             <div class="patient-section">
+//                                 <h3>Factures du patient</h3>
+//                                 <div id="patient-invoices-list">
+//                                     <div class="loading">Chargement des factures...</div>
+//                                 </div>
+//                             </div>
+//                         </div>
+//                     </div>
+//                     <div class="modal-footer">
+//                         <button class="btn btn-secondary" onclick="practiceManager.editPatient('${patientId}')">
+//                             <i class="fas fa-edit"></i> Modifier
+//                         </button>
+//                     </div>
+//                 `);
+//                 
+//                 this.showModal(modal);
+//                 
+//                 // Load devis and invoices after modal is shown
+//                 setTimeout(() => {
+//                     if (window.dentalAI && typeof window.dentalAI.loadPatientDevis === 'function') {
+//                         window.dentalAI.loadPatientDevis(patientId);
+//                     }
+//                     if (window.dentalAI && typeof window.dentalAI.loadPatientInvoices === 'function') {
+//                         window.dentalAI.loadPatientInvoices(patientId);
+//                     }
+//                     if (window.practiceManager && typeof window.practiceManager.loadPatientEducation === 'function') {
+//                         window.practiceManager.loadPatientEducation(patientId);
+//                     }
+//                 }, 100);
+//                 
+//             } else {
+//                 throw new Error(data.error);
+//             }
+//         } catch (error) {
+//             console.error('Error viewing patient:', error);
+//             this.showNotification('Erreur lors du chargement du patient', 'error');
+//         }
+//     }
+// 
+//     editPatient(patientId) {
+//         this.hideModal(document.querySelector('.modal.show'));
+//         this.showPatientModal(patientId);
+//     }
+// 
+//     // === SCHEDULE MANAGEMENT ===
+// 
+//     async loadSchedule() {
+//         try {
+//             const weekStart = this.formatDate(this.currentWeekStart);
+//             const response = await fetch(`/api/appointments/?week_start=${weekStart}`);
+//             const data = await response.json();
+// 
+//             if (data.status === 'success') {
+//                 this.appointments = data.appointments;
+//                 this.renderSchedule();
+//                 this.updateWeekDisplay();
+//             } else {
+//                 console.error('Failed to load schedule:', data.message);
+//             }
+//         } catch (error) {
+//             console.error('Error loading schedule:', error);
+//         }
+//     }
+// 
+//     renderSchedule() {
+//         const container = document.getElementById('schedule-grid');
+//         if (!container) return;
+// 
+//         // Create header with days
+//         const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+//         const hours = Array.from({length: 9}, (_, i) => i + 9); // 9 AM to 5 PM
+// 
+//         let html = '<div class="schedule-time-header"></div>';
+//         for (let day = 0; day < 7; day++) {
+//             const date = new Date(this.currentWeekStart);
+//             date.setDate(date.getDate() + day);
+//             const isToday = this.isToday(date);
+//             
+//             html += `
+//                 <div class="schedule-day-header ${isToday ? 'today' : ''}">
+//                     <div class="schedule-day-name">${days[day]}</div>
+//                     <div class="schedule-day-date">${date.getDate()}/${date.getMonth() + 1}</div>
+//                 </div>
+//             `;
+//         }
+// 
+//         // Create time slots and appointments
+//         for (const hour of hours) {
+//             html += `<div class="schedule-time-slot">${hour}:00</div>`;
+//             
+//             for (let day = 0; day < 7; day++) {
+//                 const date = new Date(this.currentWeekStart);
+//                 date.setDate(date.getDate() + day);
+//                 const dateStr = this.formatDate(date);
+//                 const isToday = this.isToday(date);
+//                 
+//                 const dayAppointments = this.appointments.filter(apt => 
+//                     apt.appointment_date === dateStr && 
+//                     parseInt(apt.appointment_time.split(':')[0]) === hour
+//                 );
+// 
+//                 // Sort appointments by time within the hour
+//                 dayAppointments.sort((a, b) => {
+//                     const timeA = a.appointment_time.split(':');
+//                     const timeB = b.appointment_time.split(':');
+//                     return (parseInt(timeA[0]) * 60 + parseInt(timeA[1])) - (parseInt(timeB[0]) * 60 + parseInt(timeB[1]));
+//                 });
+// 
+//                 // Check for conflicts in this hour
+//                 const hasConflict = this.checkHourConflicts(dayAppointments);
+// 
+//                 html += `
+//                     <div class="schedule-cell ${isToday ? 'today' : ''}" 
+//                          data-date="${dateStr}" 
+//                          data-time="${hour}:00"
+//                          data-conflict="${hasConflict}"
+//                          ondrop="practiceManager.handleDrop(event)"
+//                          ondragover="practiceManager.handleDragOver(event)"
+//                          onclick="practiceManager.showAppointmentModal('${dateStr}', '${hour}:00')">
+//                         ${this.renderAppointmentsInHour(dayAppointments, hour)}
+//                     </div>
+//                 `;
+//             }
+//         }
+// 
+//         container.innerHTML = html;
+//     }
+// 
+//     renderAppointmentsInHour(appointments, hour) {
+//         if (appointments.length === 0) return '';
+// 
+//         let html = '';
+//         let hasConflict = false;
+//         
+//         // Check for time conflicts
+//         for (let i = 0; i < appointments.length; i++) {
+//             for (let j = i + 1; j < appointments.length; j++) {
+//                 const apt1 = appointments[i];
+//                 const apt2 = appointments[j];
+//                 
+//                 const [h1, m1] = apt1.appointment_time.split(':').map(Number);
+//                 const [h2, m2] = apt2.appointment_time.split(':').map(Number);
+//                 
+//                 const start1 = m1;
+//                 const end1 = m1 + (apt1.duration_minutes || 60);
+//                 const start2 = m2;
+//                 const end2 = m2 + (apt2.duration_minutes || 60);
+//                 
+//                 // Check for overlap
+//                 if (start1 < end2 && start2 < end1) {
+//                     hasConflict = true;
+//                     break;
+//                 }
+//             }
+//             if (hasConflict) break;
+//         }
+// 
+//         for (const apt of appointments) {
+//             const [aptHour, aptMinute] = apt.appointment_time.split(':').map(Number);
+//             const duration = apt.duration_minutes || 60;
+//             
+//             // Calculate position within the hour (0-60 minutes)
+//             const startMinute = aptMinute;
+//             const heightPercentage = (duration / 60) * 100; // Height as percentage of hour slot
+//             const topOffset = (startMinute / 60) * 100; // Top position as percentage
+//             
+//             // Add conflict class if there's an overlap
+//             const conflictClass = hasConflict ? 'conflict' : '';
+//             
+//             html += `
+//                 <div class="appointment-block ${apt.status} ${conflictClass}" 
+//                      data-appointment-id="${apt.id}"
+//                      data-duration="${duration}"
+//                      draggable="true"
+//                      ondragstart="practiceManager.handleDragStart(event)"
+//                      onclick="event.stopPropagation(); practiceManager.showAppointmentDetails('${apt.id}')"
+//                      style="height: ${heightPercentage}%; top: ${topOffset}%; position: absolute; width: calc(100% - 8px); left: 4px; z-index: 1;">
+//                     <div class="appointment-patient">${apt.first_name} ${apt.last_name}</div>
+//                     <div class="appointment-treatment">${apt.treatment_type}</div>
+//                     <div class="appointment-time">${apt.appointment_time} (${duration}min)</div>
+//                 </div>
+//             `;
+//         }
+// 
+//         return html;
+//     }
+// 
+//     handleDragStart(event) {
+//         const appointmentId = event.target.dataset.appointmentId;
+//         event.dataTransfer.setData('text/plain', appointmentId);
+//         event.target.classList.add('dragging');
+//     }
+// 
+//     handleDragOver(event) {
+//         event.preventDefault();
+//         event.currentTarget.classList.add('drag-over');
+//     }
+// 
+//     handleDrop(event) {
+//         event.preventDefault();
+//         event.currentTarget.classList.remove('drag-over');
+//         
+//         const appointmentId = event.dataTransfer.getData('text/plain');
+//         const newDate = event.currentTarget.dataset.date;
+//         const newTime = event.currentTarget.dataset.time;
+//         
+//         this.moveAppointment(appointmentId, newDate, newTime);
+//     }
+// 
+//     async moveAppointment(appointmentId, newDate, newTime) {
+//         try {
+//             const response = await fetch(`/api/appointments/${appointmentId}/move`, {
+//                 method: 'PUT',
+//                 headers: {
+//                     'Content-Type': 'application/json'
+//                 },
+//                 body: JSON.stringify({
+//                     new_date: newDate,
+//                     new_time: newTime
+//                 })
+//             });
+// 
+//             const result = await response.json();
+// 
+//             if (result.success) {
+//                 this.showNotification('Rendez-vous déplacé avec succès', 'success');
+//                 this.loadSchedule(); // Refresh the schedule
+//             } else {
+//                 if (response.status === 409) {
+//                     // Conflict - show available slots
+//                     this.showNotification(`Conflit: ${result.error}`, 'error');
+//                     if (result.available_slots) {
+//                         this.showAvailableSlots(newDate, result.available_slots);
+//                     }
+//                 } else {
+//                     this.showNotification(`Erreur: ${result.error}`, 'error');
+//                 }
+//             }
+//         } catch (error) {
+//             console.error('Error moving appointment:', error);
+//             this.showNotification('Erreur lors du déplacement', 'error');
+//         }
+//     }
+// 
+//     showAvailableSlots(date, availableSlots) {
+//         const modal = this.createModal(`
+//             <div class="available-slots-modal">
+//                 <h3>Créneaux disponibles pour le ${date}</h3>
+//                 <div class="slots-grid">
+//                     ${availableSlots.map(slot => `
+//                         <button class="slot-btn" onclick="practiceManager.selectTimeSlot('${date}', '${slot}')">
+//                             ${slot}
+//                         </button>
+//                     `).join('')}
+//                 </div>
+//                 <div class="modal-actions">
+//                     <button onclick="practiceManager.hideModal(document.querySelector('.modal'))" class="btn btn-secondary">
+//                         Annuler
+//                     </button>
+//                 </div>
+//             </div>
+//         `);
+//         this.showModal(modal);
+//     }
+// 
+//     async showAppointmentDetails(appointmentId) {
+//         try {
+//             const response = await fetch(`/api/appointments/${appointmentId}/details`);
+//             const result = await response.json();
+// 
+//             if (result.success) {
+//                 const appointment = result.appointment;
+//                 const modal = this.createModal(`
+//                     <div class="appointment-details-modal">
+//                         <h3><i class="fas fa-calendar-check"></i> Détails du Rendez-vous</h3>
+//                         
+//                         <div class="appointment-info">
+//                             <div class="info-section">
+//                                 <h4><i class="fas fa-user"></i> Patient</h4>
+//                                 <p><strong>Nom:</strong> ${appointment.first_name} ${appointment.last_name}</p>
+//                                 <p><strong>Téléphone:</strong> ${appointment.phone || 'N/A'}</p>
+//                                 <p><strong>Email:</strong> ${appointment.email || 'N/A'}</p>
+//                                 <p><strong>Date de naissance:</strong> ${appointment.birth_date || 'N/A'}</p>
+//                             </div>
+//                             
+//                             <div class="info-section">
+//                                 <h4><i class="fas fa-calendar"></i> Rendez-vous</h4>
+//                                 <p><strong>Date:</strong> ${new Date(appointment.appointment_date).toLocaleDateString('fr-FR')}</p>
+//                                 <p><strong>Heure:</strong> ${appointment.appointment_time}</p>
+//                                 <p><strong>Durée:</strong> ${appointment.duration_minutes} minutes</p>
+//                                 <p><strong>Statut:</strong> <span class="status-badge ${appointment.status}">${this.getStatusText(appointment.status)}</span></p>
+//                             </div>
+//                             
+//                             <div class="info-section">
+//                                 <h4><i class="fas fa-tooth"></i> Traitement</h4>
+//                                 <p><strong>Type:</strong> ${appointment.treatment_type}</p>
+//                                 <p><strong>Praticien:</strong> ${appointment.doctor}</p>
+//                                 ${appointment.notes ? `<p><strong>Notes:</strong> ${appointment.notes}</p>` : ''}
+//                             </div>
+//                             
+//                             ${appointment.treatment_plan ? `
+//                                 <div class="info-section">
+//                                     <h4><i class="fas fa-clipboard-list"></i> Plan de Traitement</h4>
+//                                     <p><strong>Consultation:</strong> ${appointment.consultation_text || 'N/A'}</p>
+//                                     ${appointment.treatment_plan.treatment_sequence ? `
+//                                         <div class="treatment-sequence-preview">
+//                                             <h5>Séquence de traitement:</h5>
+//                                             <ul>
+//                                                 ${appointment.treatment_plan.treatment_sequence.map(step => `
+//                                                     <li>${step.traitement} - ${step.duree}</li>
+//                                                 `).join('')}
+//                                             </ul>
+//                                         </div>
+//                                     ` : ''}
+//                                 </div>
+//                             ` : ''}
+//                         </div>
+//                         
+//                         <div class="modal-actions">
+//                             <button onclick="practiceManager.editAppointment('${appointmentId}')" class="btn btn-primary">
+//                                 <i class="fas fa-edit"></i> Modifier
+//                             </button>
+//                             <button onclick="practiceManager.cancelAppointment('${appointmentId}')" class="btn btn-danger">
+//                                 <i class="fas fa-times"></i> Annuler
+//                             </button>
+//                             <button onclick="practiceManager.hideModal(document.querySelector('.modal'))" class="btn btn-secondary">
+//                                 <i class="fas fa-times"></i> Fermer
+//                             </button>
+//                         </div>
+//                     </div>
+//                 `);
+//                 this.showModal(modal);
+//             } else {
+//                 this.showNotification(`Erreur: ${result.error}`, 'error');
+//             }
+//         } catch (error) {
+//             console.error('Error loading appointment details:', error);
+//             this.showNotification('Erreur lors du chargement des détails', 'error');
+//         }
+//     }
+// 
+//     getStatusText(status) {
+//         const statusMap = {
+//             'scheduled': 'Programmé',
+//             'completed': 'Terminé',
+//             'cancelled': 'Annulé',
+//             'no-show': 'Absence'
+//         };
+//         return statusMap[status] || status;
+//     }
+// 
+//     async cancelAppointment(appointmentId) {
+//         if (!confirm('Êtes-vous sûr de vouloir annuler ce rendez-vous?')) {
+//             return;
+//         }
+// 
+//         try {
+//             const response = await fetch(`/api/appointments/${appointmentId}`, {
+//                 method: 'PUT',
+//                 headers: {
+//                     'Content-Type': 'application/json'
+//                 },
+//                 body: JSON.stringify({
+//                     status: 'cancelled'
+//                 })
+//             });
+// 
+//             const result = await response.json();
+// 
+//             if (result.success) {
+//                 this.showNotification('Rendez-vous annulé', 'success');
+//                 this.hideModal(document.querySelector('.modal'));
+//                 this.loadSchedule();
+//             } else {
+//                 this.showNotification(`Erreur: ${result.error}`, 'error');
+//             }
+//         } catch (error) {
+//             console.error('Error cancelling appointment:', error);
+//             this.showNotification('Erreur lors de l\'annulation', 'error');
+//         }
+//     }
+// 
+//     editAppointment(appointmentId) {
+//         // Close current modal and show edit modal
+//         this.hideModal(document.querySelector('.modal'));
+//         // You can implement edit functionality here
+//         this.showNotification('Fonction de modification à implémenter', 'info');
+//     }
+// 
+//     selectTimeSlot(date, time) {
+//         // This method is called when user selects a time slot from available slots
+//         const appointmentId = this.draggedAppointmentId;
+//         if (appointmentId) {
+//             this.hideModal(document.querySelector('.modal'));
+//             this.moveAppointment(appointmentId, date, time);
+//         }
+//     }
+// 
+//     navigateWeek(direction) {
+//         const newDate = new Date(this.currentWeekStart);
+//         newDate.setDate(newDate.getDate() + (direction * 7));
+//         this.currentWeekStart = newDate;
+//         this.loadSchedule();
+//     }
+// 
+//     updateWeekDisplay() {
+//         const display = document.getElementById('current-week-display');
+//         if (display) {
+//             const endDate = new Date(this.currentWeekStart);
+//             endDate.setDate(endDate.getDate() + 6);
+//             
+//             display.textContent = `Semaine du ${this.formatDate(this.currentWeekStart)} au ${this.formatDate(endDate)}`;
+//         }
+//     }
+// 
+//     showAppointmentModal(date = '', time = '') {
+//         const modal = this.createModal(`
+//             <div class="modal-header">
+//                 <h2 class="modal-title">
+//                     <i class="fas fa-calendar-plus"></i>
+//                     Nouveau Rendez-vous
+//                 </h2>
+//                 <button class="modal-close">&times;</button>
+//             </div>
+//             <div class="modal-body">
+//                 <form id="appointment-form">
+//                     <div class="form-group">
+//                         <label class="form-label">Patient *</label>
+//                         <select class="form-control" name="patient_id" required>
+//                             <option value="">Sélectionner un patient</option>
+//                             ${this.patients.map(p => `
+//                                 <option value="${p.id}">${p.first_name} ${p.last_name}</option>
+//                             `).join('')}
+//                         </select>
+//                     </div>
+//                     <div class="form-row">
+//                         <div class="form-group">
+//                             <label class="form-label">Date *</label>
+//                             <input type="date" class="form-control" name="appointment_date" required 
+//                                    value="${date}">
+//                         </div>
+//                         <div class="form-group">
+//                             <label class="form-label">Heure *</label>
+//                             <input type="time" class="form-control" name="appointment_time" required 
+//                                    value="${time}">
+//                         </div>
+//                     </div>
+//                     <div class="form-row">
+//                         <div class="form-group">
+//                             <label class="form-label">Durée (minutes)</label>
+//                             <input type="number" class="form-control" name="duration_minutes" value="60" min="15" step="15">
+//                         </div>
+//                         <div class="form-group">
+//                             <label class="form-label">Docteur</label>
+//                             <input type="text" class="form-control" name="doctor" value="Dr.">
+//                         </div>
+//                     </div>
+//                     <div class="form-group">
+//                         <label class="form-label">Type de traitement</label>
+//                         <input type="text" class="form-control" name="treatment_type" 
+//                                placeholder="Consultation, Nettoyage, etc.">
+//                     </div>
+//                     <div class="form-group">
+//                         <label class="form-label">Notes</label>
+//                         <textarea class="form-control" name="notes" rows="3"></textarea>
+//                     </div>
+//                 </form>
+//             </div>
+//             <div class="modal-footer">
+//                 <button class="btn btn-secondary" onclick="practiceManager.hideModal(this.closest('.modal'))">
+//                     Annuler
+//                 </button>
+//                 <button class="btn btn-primary" onclick="practiceManager.saveAppointment()">
+//                     <i class="fas fa-save"></i>
+//                     Créer
+//                 </button>
+//             </div>
+//         `);
+//         
+//         this.showModal(modal);
+//     }
+// 
+//     async saveAppointment() {
+//         const form = document.getElementById('appointment-form');
+//         const formData = new FormData(form);
+//         const appointmentData = Object.fromEntries(formData.entries());
+// 
+//         try {
+//             const response = await fetch('/api/appointments', {
+//                 method: 'POST',
+//                 headers: {
+//                     'Content-Type': 'application/json',
+//                 },
+//                 body: JSON.stringify(appointmentData)
+//             });
+// 
+//             const data = await response.json();
+// 
+//             if (data.success) {
+//                 this.hideModal(document.querySelector('.modal.show'));
+//                 this.loadSchedule();
+//                 this.showNotification(data.message || 'Rendez-vous créé avec succès', 'success');
+//             } else {
+//                 this.showNotification(data.error || 'Erreur lors de la création', 'error');
+//             }
+//         } catch (error) {
+//             console.error('Error saving appointment:', error);
+//             this.showNotification('Erreur lors de la création', 'error');
+//         }
+//     }
+// 
+//     // === UTILITY METHODS ===
+// 
+//     createModal(content) {
+//         const modal = document.createElement('div');
+//         modal.className = 'modal';
+//         modal.innerHTML = `<div class="modal-content">${content}</div>`;
+//         document.body.appendChild(modal);
+//         return modal;
+//     }
+// 
+//     showModal(modal) {
+//         modal.classList.add('show');
+//     }
+// 
+//     hideModal(modal) {
+//         if (modal) {
+//             modal.classList.remove('show');
+//             setTimeout(() => {
+//                 if (modal.parentNode) {
+//                     modal.parentNode.removeChild(modal);
+//                 }
+//             }, 300);
+//         }
+//     }
+// 
+//     showNotification(message, type = 'info') {
+//         // Remove existing notifications
+//         const existingNotifications = document.querySelectorAll('.notification');
+//         existingNotifications.forEach(notif => notif.remove());
+//         
+//         // Create new notification
+//         const notification = document.createElement('div');
+//         notification.className = `notification ${type}`;
+//         notification.textContent = message;
+//         
+//         // Add to document
+//         document.body.appendChild(notification);
+//         
+//         // Auto-remove after 5 seconds
+//             setTimeout(() => {
+//                 if (notification.parentNode) {
+//                 notification.style.animation = 'slideOut 0.3s ease';
+//                 setTimeout(() => notification.remove(), 300);
+//                 }
+//         }, 5000);
+//     }
+// 
+//     formatDate(date) {
+//         if (typeof date === 'string') {
+//             date = new Date(date);
+//         }
+//         return date.toISOString().split('T')[0];
+//     }
+// 
+//     isToday(date) {
+//         const today = new Date();
+//         return date.toDateString() === today.toDateString();
+//     }
+// 
+//     getWeekStart(date) {
+//         const d = new Date(date);
+//         const day = d.getDay();
+//         const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+//         return new Date(d.setDate(diff));
+//     }
+// 
+//     checkHourConflicts(appointments) {
+//         if (appointments.length < 2) return false;
+//         
+//         // Check for time conflicts
+//         for (let i = 0; i < appointments.length; i++) {
+//             for (let j = i + 1; j < appointments.length; j++) {
+//                 const apt1 = appointments[i];
+//                 const apt2 = appointments[j];
+//                 
+//                 const [h1, m1] = apt1.appointment_time.split(':').map(Number);
+//                 const [h2, m2] = apt2.appointment_time.split(':').map(Number);
+//                 
+//                 const start1 = m1;
+//                 const end1 = m1 + (apt1.duration_minutes || 60);
+//                 const start2 = m2;
+//                 const end2 = m2 + (apt2.duration_minutes || 60);
+//                 
+//                 // Check for overlap
+//                 if (start1 < end2 && start2 < end1) {
+//                     return true;
+//                 }
+//             }
+//         }
+//         return false;
+//     }
+// 
+//     async generateDevisFromPlan(planId, patientId) {
+//         try {
+//             // Get the treatment plan details
+//             const response = await fetch(`/api/patients/${patientId}`);
+//             const data = await response.json();
+//             
+//             if (!data.success) {
+//                 throw new Error('Impossible de charger les détails du patient');
+//             }
+//             
+//             const treatmentPlan = data.treatment_plans.find(plan => plan.id === planId);
+//             if (!treatmentPlan) {
+//                 throw new Error('Plan de traitement non trouvé');
+//             }
+//             
+//             let planData = {};
+//             try {
+//                 planData = JSON.parse(treatmentPlan.plan_data);
+//             } catch (e) {
+//                 throw new Error('Données du plan de traitement invalides');
+//             }
+//             
+//             if (!planData.treatment_sequence || planData.treatment_sequence.length === 0) {
+//                 throw new Error('Aucune séquence de traitement trouvée');
+//             }
+//             
+//             // Generate devis directly since we already have the patient
+//             const devisResponse = await fetch('/api/generate-devis-from-treatment', {
+//                 method: 'POST',
+//                 headers: {
+//                     'Content-Type': 'application/json',
+//                 },
+//                 body: JSON.stringify({
+//                     patient_id: patientId,
+//                     treatment_plan_id: planId,
+//                     treatment_plan: planData  // Send the complete plan data object
+//                 })
+//             });
+//             
+//             const devisData = await devisResponse.json();
+//             
+//             if (devisData.success) {
+//                 this.showNotification('Devis généré avec succès!', 'success');
+//                 
+//                 // Show the generated devis details
+//                 if (window.dentalAI && typeof window.dentalAI.showDevisDetails === 'function') {
+//                     window.dentalAI.showDevisDetails(devisData.devis_id);
+//                 }
+//             } else {
+//                 throw new Error(devisData.error || 'Erreur lors de la génération du devis');
+//             }
+//             
+//         } catch (error) {
+//             console.error('Error generating devis:', error);
+//             this.showNotification('Erreur: ' + error.message, 'error');
+//         }
+//     }
+// 
+//     async generatePatientEducationFromPlan(planId, patientId) {
+//         try {
+//             this.showNotification('Génération du document éducatif en cours...', 'info');
+//             
+//             // Get treatment plan data
+//             const response = await fetch(`/api/patients/${patientId}`);
+//             const patientData = await response.json();
+//             
+//             if (!patientData.success) {
+//                 throw new Error('Impossible de récupérer les données du patient');
+//             }
+//             
+//             const treatmentPlan = patientData.treatment_plans.find(plan => plan.id === planId);
+//             if (!treatmentPlan) {
+//                 throw new Error('Plan de traitement non trouvé');
+//             }
+//             
+//             let planData = {};
+//             try {
+//                 planData = JSON.parse(treatmentPlan.plan_data);
+//             } catch (e) {
+//                 planData = { treatment_sequence: [] };
+//             }
+//             
+//             // Generate education content
+//             const educationResponse = await fetch('/api/generate-patient-education', {
+//                 method: 'POST',
+//                 headers: {
+//                     'Content-Type': 'application/json'
+//                 },
+//                 body: JSON.stringify({
+//                     patient_id: patientId,
+//                     treatment_plan: {
+//                         consultation_text: treatmentPlan.consultation_text,
+//                         treatment_sequence: planData.treatment_sequence || []
+//                     }
+//                 })
+//             });
+//             
+//             const educationData = await educationResponse.json();
+//             
+//             if (educationData.success) {
+//                 this.showNotification('Document éducatif généré avec succès', 'success');
+//                 
+//                 // Show education preview modal
+//                 const patient = patientData.patient;
+//                 const patientName = `${patient.first_name} ${patient.last_name}`;
+//                 
+//                 this.showEducationDocumentPreview(
+//                     educationData.education_content,
+//                     patientId,
+//                     patientName,
+//                     planId // Pass the treatment plan ID
+//                 );
+//             } else {
+//                 throw new Error(educationData.error || 'Erreur lors de la génération du document éducatif');
+//             }
+//             
+//         } catch (error) {
+//             console.error('Error generating patient education:', error);
+//             this.showNotification('Erreur: ' + error.message, 'error');
+//         }
+//     }
+//     
+//     showEducationDocumentPreview(educationContent, patientId, patientName, treatmentPlanId = null) {
+//         // Extract first and last name from patientName for the onclick handlers
+//         const nameParts = patientName.split(' ');
+//         const firstName = nameParts[0] || '';
+//         const lastName = nameParts.slice(1).join(' ') || '';
+//         
+//         // Show modal with education document preview
+//         const modal = this.createModal(`
+//             <div class="education-preview-modal">
+//                 <h3><i class="fas fa-file-alt"></i> Aperçu du Document d'Éducation</h3>
+//                 <div class="patient-info">
+//                     <p><strong>Patient:</strong> ${patientName}</p>
+//                     <p><strong>Date:</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
+//                 </div>
+//                 <div class="education-content">
+//                     <div class="education-editor" contenteditable="true" id="education-editor">
+//                         ${educationContent}
+//                     </div>
+//                 </div>
+//                 <div class="modal-actions">
+//                     <button class="btn btn-secondary" onclick="dentalAI.downloadEducationDocument('${patientId}', '${patientName}')">
+//                         <i class="fas fa-download"></i> Télécharger PDF
+//                     </button>
+//                     <button class="btn btn-secondary" onclick="dentalAI.saveEducationDocument('${patientId}', document.getElementById('education-editor').innerHTML, '${treatmentPlanId || ''}')">
+//                         <i class="fas fa-save"></i> Sauvegarder
+//                     </button>
+//                     <button class="btn btn-secondary" onclick="dentalAI.hideEducationModal()">Fermer</button>
+//                 </div>
+//             </div>
+//         `);
+//         
+//         this.showModal(modal);
+//     }
+// 
+//     // PowerPoint Generation Methods
+//     setTreatmentExample(text) {
+//         const textarea = document.getElementById('treatment-input');
+//         if (textarea) {
+//             textarea.value = text;
+//             textarea.focus();
+//         }
+//     }
+// 
+//     async processTreatmentPlan() {
+//         const textarea = document.getElementById('treatment-input');
+//         const text = textarea.value.trim();
+//         
+//         if (!text) {
+//             this.showTreatmentError('Veuillez saisir un plan de traitement');
+//             return;
+//         }
+//         
+//         // Show loading state
+//         this.setTreatmentLoadingState(true);
+//         this.hideTreatmentResults();
+//         this.hideTreatmentError();
+//         
+//         try {
+//             const response = await fetch('/api/process-powerpoint', {
+//                 method: 'POST',
+//                 headers: {
+//                     'Content-Type': 'application/json',
+//                 },
+//                 body: JSON.stringify({ text: text })
+//             });
+//             
+//             const data = await response.json();
+//             
+//             if (data.success) {
+//                 this.showTreatmentResults(data.treatments, data.output_file);
+//             } else {
+//                 this.showTreatmentError(data.error || 'Erreur inconnue');
+//             }
+//         } catch (error) {
+//             this.showTreatmentError('Erreur de connexion: ' + error.message);
+//         } finally {
+//             this.setTreatmentLoadingState(false);
+//         }
+//     }
+// 
+//     setTreatmentLoadingState(loading) {
+//         const btn = document.getElementById('process-treatment-btn');
+//         const btnText = document.getElementById('process-btn-text');
+//         const btnLoader = document.getElementById('process-btn-loader');
+//         
+//         if (btn && btnText && btnLoader) {
+//             if (loading) {
+//                 btn.disabled = true;
+//                 btnText.style.display = 'none';
+//                 btnLoader.style.display = 'inline-block';
+//             } else {
+//                 btn.disabled = false;
+//                 btnText.style.display = 'inline-block';
+//                 btnLoader.style.display = 'none';
+//             }
+//         }
+//     }
+// 
+//     showTreatmentResults(treatments, outputFile) {
+//         const resultsDiv = document.getElementById('treatment-results');
+//         const resultsContent = document.getElementById('treatment-results-content');
+//         const downloadSection = document.getElementById('download-section');
+//         const downloadBtn = document.getElementById('download-ppt-btn');
+//         
+//         if (!resultsDiv || !resultsContent || !downloadSection || !downloadBtn) {
+//             console.error('Required elements not found');
+//             return;
+//         }
+//         
+//         // Clear previous results
+//         resultsContent.innerHTML = '';
+//         
+//         // Group results by type
+//         const validTreatments = treatments.filter(t => t.success);
+//         const invalidTeeth = treatments.filter(t => !t.success && t.error && t.error.includes('invalide'));
+//         const failedTreatments = treatments.filter(t => !t.success && (!t.error || !t.error.includes('invalide')));
+//         
+//         // Display successful treatments
+//         if (validTreatments.length > 0) {
+//             const successSection = document.createElement('div');
+//             successSection.className = 'treatment-success-section';
+//             successSection.innerHTML = `
+//                 <h4 class="success-header">✅ Traitements appliqués avec succès</h4>
+//                 <div class="treatment-grid">
+//                     ${validTreatments.map(treatment => `
+//                         <div class="treatment-result success">
+//                             <div class="treatment-info">
+//                                 <strong>Dent ${treatment.tooth}:</strong> ${treatment.treatment}
+//                             </div>
+//                             <div class="treatment-status status-success">
+//                                 <i class="fas fa-check-circle"></i> Appliqué
+//                             </div>
+//                         </div>
+//                     `).join('')}
+//                 </div>
+//             `;
+//             resultsContent.appendChild(successSection);
+//         }
+//         
+//         // Display invalid teeth
+//         if (invalidTeeth.length > 0) {
+//             const invalidSection = document.createElement('div');
+//             invalidSection.className = 'treatment-invalid-section';
+//             invalidSection.innerHTML = `
+//                 <h4 class="invalid-header">⚠️ Numéros de dents invalides</h4>
+//                 <div class="dental-info">
+//                     <p><strong>Système FDI:</strong> Les dents valides sont 11-18, 21-28, 31-38, 41-48</p>
+//                 </div>
+//                 <div class="treatment-grid">
+//                     ${invalidTeeth.map(treatment => `
+//                         <div class="treatment-result invalid">
+//                             <div class="treatment-info">
+//                                 <strong>Dent ${treatment.tooth}:</strong> ${treatment.treatment}
+//                             </div>
+//                             <div class="treatment-status status-invalid">
+//                                 <i class="fas fa-exclamation-triangle"></i> Dent inexistante
+//                             </div>
+//                         </div>
+//                     `).join('')}
+//                 </div>
+//             `;
+//             resultsContent.appendChild(invalidSection);
+//         }
+//         
+//         // Display failed treatments
+//         if (failedTreatments.length > 0) {
+//             const failedSection = document.createElement('div');
+//             failedSection.className = 'treatment-failed-section';
+//             failedSection.innerHTML = `
+//                 <h4 class="failed-header">❌ Échecs techniques</h4>
+//                 <div class="treatment-grid">
+//                     ${failedTreatments.map(treatment => `
+//                         <div class="treatment-result failed">
+//                             <div class="treatment-info">
+//                                 <strong>Dent ${treatment.tooth}:</strong> ${treatment.treatment}
+//                                 ${treatment.error ? `<br><small class="error-detail">${treatment.error}</small>` : ''}
+//                             </div>
+//                             <div class="treatment-status status-failed">
+//                                 <i class="fas fa-times-circle"></i> Échec
+//                             </div>
+//                         </div>
+//                     `).join('')}
+//                 </div>
+//             `;
+//             resultsContent.appendChild(failedSection);
+//         }
+//         
+//         // Show download button if file was created
+//         if (outputFile) {
+//             downloadBtn.onclick = () => this.downloadPowerPointFile(outputFile);
+//             downloadSection.style.display = 'block';
+//         }
+//         
+//         resultsDiv.style.display = 'block';
+//     }
+// 
+//     showTreatmentError(message) {
+//         const errorDiv = document.getElementById('treatment-error');
+//         const errorMessage = document.getElementById('treatment-error-message');
+//         
+//         if (errorDiv && errorMessage) {
+//             errorMessage.textContent = message;
+//             errorDiv.style.display = 'block';
+//         }
+//     }
+// 
+//     hideTreatmentResults() {
+//         const resultsDiv = document.getElementById('treatment-results');
+//         if (resultsDiv) {
+//             resultsDiv.style.display = 'none';
+//         }
+//     }
+// 
+//     hideTreatmentError() {
+//         const errorDiv = document.getElementById('treatment-error');
+//         if (errorDiv) {
+//             errorDiv.style.display = 'none';
+//         }
+//     }
+// 
+//     downloadPowerPointFile(filename) {
+//         window.location.href = `/api/download-powerpoint/${filename}`;
+//     }
+// 
+// // FinanceManager class has been moved to /static/js/features/finance/finance-manager.js
+// // class FinanceManager {
+//     constructor() {
+//         this.charts = {};
+//         this.dashboardData = null;
+//         this.invoices = [];
+//         this.pricing = [];
+//         this.init();
+//     }
+// 
+//     init() {
+//         this.setupEventListeners();
+//     }
+// 
+//     setupEventListeners() {
+//         // Dashboard refresh
+//         const refreshBtn = document.getElementById('refresh-dashboard');
+//         if (refreshBtn) {
+//             refreshBtn.addEventListener('click', () => this.loadDashboard());
+//         }
+// 
+//         // Pricing search
+//         const pricingSearch = document.getElementById('pricing-search');
+//         if (pricingSearch) {
+//             pricingSearch.addEventListener('input', (e) => this.searchPricing(e.target.value));
+//         }
+// 
+//         // Pricing category filter
+//         const pricingFilter = document.getElementById('pricing-category-filter');
+//         if (pricingFilter) {
+//             pricingFilter.addEventListener('change', (e) => this.filterPricingByCategory(e.target.value));
+//         }
+// 
+//         // Invoice search
+//         const invoiceSearch = document.getElementById('invoice-search');
+//         if (invoiceSearch) {
+//             invoiceSearch.addEventListener('input', (e) => this.searchInvoices(e.target.value));
+//         }
+// 
+//         // Invoice status filter
+//         const invoiceFilter = document.getElementById('invoice-status-filter');
+//         if (invoiceFilter) {
+//             invoiceFilter.addEventListener('change', (e) => this.filterInvoicesByStatus(e.target.value));
+//         }
+// 
+//         // Create invoice button
+//         const createInvoiceBtn = document.getElementById('create-invoice-btn');
+//         if (createInvoiceBtn) {
+//             createInvoiceBtn.addEventListener('click', () => this.showCreateInvoiceModal());
+//         }
+//     }
+// 
+//     handleTabSwitch(tabId) {
+//         switch (tabId) {
+//             case 'finance-dashboard':
+//                 this.loadDashboard();
+//                 break;
+//             case 'invoices':
+//                 this.loadInvoices();
+//                 break;
+//             case 'pricing':
+//                 this.loadPricing();
+//                 break;
+//         }
+//     }
+// 
+//     async loadDashboard() {
+//         try {
+//             const response = await fetch('/api/financial/dashboard');
+//             const data = await response.json();
+//             
+//             if (data.status === 'success') {
+//                 this.dashboardData = data.dashboard;
+//                 this.renderDashboard();
+//             } else {
+//                 throw new Error(data.message);
+//             }
+//         } catch (error) {
+//             console.error('Error loading dashboard:', error);
+//             this.showNotification('Erreur lors du chargement du tableau de bord', 'error');
+//         }
+//     }
+// 
+//     renderDashboard() {
+//         if (!this.dashboardData) return;
+// 
+//         // Calculate summary from the data
+//         const revenue = this.dashboardData.revenue;
+//         const collectionRate = revenue.total > 0 ? (revenue.paid / revenue.total) * 100 : 0;
+//         
+//         // Update metrics
+//         document.getElementById('current-month-revenue').textContent = `${revenue.total.toFixed(2)} CHF`;
+//         document.getElementById('pending-payments').textContent = `${revenue.pending.toFixed(2)} CHF`;
+//         document.getElementById('collection-rate').textContent = `${collectionRate.toFixed(1)}%`;
+//         
+//         // Update revenue change (set to 0 for now as we don't have previous month data)
+//         const revenueChange = document.getElementById('revenue-change');
+//         revenueChange.textContent = '0%';
+//         revenueChange.style.color = '#6c757d';
+//         // Update top patient (set placeholder for now)
+//         const topPatientValue = document.getElementById('top-patient-value');
+//         const topPatientName = document.getElementById('top-patient-name');
+//         if (topPatientValue) topPatientValue.textContent = '0.00 CHF';
+//         if (topPatientName) topPatientName.textContent = 'Aucun patient';
+// 
+//         // Update pending count
+//         const pendingCount = this.dashboardData.invoices.pending + this.dashboardData.invoices.partial;
+//         const pendingCountEl = document.getElementById('pending-count');
+//         if (pendingCountEl) pendingCountEl.textContent = `${pendingCount} factures`;
+// 
+//         // Render charts with available data
+//         this.renderRevenueChart();
+//         this.renderPaymentStatusChart();
+//     }
+// 
+//     renderRevenueChart() {
+//         const ctx = document.getElementById('revenue-chart');
+//         if (!ctx) return;
+// 
+//         if (this.charts.revenue) {
+//             this.charts.revenue.destroy();
+//         }
+// 
+//         // Use current month data as a single point
+//         const currentMonth = new Date().toLocaleDateString('fr-CH', { month: 'short', year: 'numeric' });
+//         const labels = [currentMonth];
+//         const revenues = [this.dashboardData.revenue.total];
+// 
+//         this.charts.revenue = new Chart(ctx, {
+//             type: 'line',
+//             data: {
+//                 labels: labels,
+//                 datasets: [{
+//                     label: 'Revenus (CHF)',
+//                     data: revenues,
+//                     borderColor: '#667eea',
+//                     backgroundColor: 'rgba(102, 126, 234, 0.1)',
+//                     borderWidth: 3,
+//                     fill: true,
+//                     tension: 0.4,
+//                     pointBackgroundColor: '#667eea',
+//                     pointBorderColor: '#fff',
+//                     pointBorderWidth: 2,
+//                     pointRadius: 6
+//                 }]
+//             },
+//             options: {
+//                 responsive: true,
+//                 maintainAspectRatio: false,
+//                 plugins: {
+//                     legend: {
+//                         display: false
+//                     }
+//                 },
+//                 scales: {
+//                     y: {
+//                         beginAtZero: true,
+//                         ticks: {
+//                             callback: function(value) {
+//                                 return value.toFixed(0) + ' CHF';
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         });
+//     }
+// 
+//     renderPaymentStatusChart() {
+//         const ctx = document.getElementById('payment-status-chart');
+//         if (!ctx) return;
+// 
+//         if (this.charts.paymentStatus) {
+//             this.charts.paymentStatus.destroy();
+//         }
+// 
+//         // Use invoice status data
+//         const revenue = this.dashboardData.revenue;
+//         const labels = ['Payé', 'En attente'];
+//         const amounts = [revenue.paid, revenue.pending];
+// 
+//         this.charts.paymentStatus = new Chart(ctx, {
+//             type: 'doughnut',
+//             data: {
+//                 labels: labels,
+//                 datasets: [{
+//                     data: amounts,
+//                     backgroundColor: [
+//                         '#ffc107',
+//                         '#17a2b8',
+//                         '#28a745'
+//                     ],
+//                     borderWidth: 0
+//                 }]
+//             },
+//             options: {
+//                 responsive: true,
+//                 maintainAspectRatio: false,
+//                 plugins: {
+//                     legend: {
+//                         position: 'bottom'
+//                     }
+//                 }
+//             }
+//         });
+//     }
+// 
+//     renderTreatmentsChart() {
+//         // Skip for now as we don't have treatment data
+//         return;
+// 
+//         this.charts.treatments = new Chart(ctx, {
+//             type: 'bar',
+//             data: {
+//                 labels: labels,
+//                 datasets: [{
+//                     label: 'Revenus (CHF)',
+//                     data: revenues,
+//                     backgroundColor: 'rgba(102, 126, 234, 0.8)',
+//                     borderColor: '#667eea',
+//                     borderWidth: 1
+//                 }]
+//             },
+//             options: {
+//                 responsive: true,
+//                 maintainAspectRatio: false,
+//                 plugins: {
+//                     legend: {
+//                         display: false
+//                     }
+//                 },
+//                 scales: {
+//                     y: {
+//                         beginAtZero: true,
+//                         ticks: {
+//                             callback: function(value) {
+//                                 return value.toFixed(0) + ' CHF';
+//                             }
+//                         }
+//                     },
+//                     x: {
+//                         ticks: {
+//                             maxRotation: 45,
+//                             minRotation: 45
+//                         }
+//                     }
+//                 }
+//             }
+//         });
+//     }
+// 
+//     renderTopPatientsList() {
+//         const container = document.getElementById('top-patients-list');
+//         if (!container) return;
+// 
+//         // Skip for now as we don't have top patients data
+//         container.innerHTML = '<div class="empty-state">Données patients non disponibles</div>';
+//     }
+// 
+//     async loadInvoices() {
+//         try {
+//             const [invoicesResponse, devisResponse] = await Promise.all([
+//                 fetch('/api/financial/invoices'),
+//                 fetch('/api/financial/devis')
+//             ]);
+//             
+//             const invoicesData = await invoicesResponse.json();
+//             const devisData = await devisResponse.json();
+//             
+//             if (invoicesData.status === 'success' && devisData.status === 'success') {
+//                 this.invoices = invoicesData.invoices || [];
+//                 this.devis = devisData.devis || [];
+//                 this.renderInvoicesAndDevis();
+//             } else {
+//                 throw new Error(invoicesData.message || devisData.message);
+//             }
+//         } catch (error) {
+//             console.error('Error loading invoices and devis:', error);
+//             this.showNotification('Erreur lors du chargement des factures et devis', 'error');
+//         }
+//     }
+// 
+//     renderInvoicesAndDevis() {
+//         const container = document.querySelector('.invoices-container');
+//         if (!container) return;
+//         
+//         container.innerHTML = `
+//             <div class="invoices-header">
+//                 <h2><i class="fas fa-file-invoice-dollar"></i> Factures et Devis</h2>
+//                 <div class="invoices-actions">
+//                     <div class="search-container">
+//                         <input type="text" id="invoice-search" placeholder="Rechercher une facture ou devis...">
+//                         <i class="fas fa-search"></i>
+//                     </div>
+//                     <select id="document-type-filter" onchange="financeManager.filterByDocumentType(this.value)">
+//                         <option value="">Tous les documents</option>
+//                         <option value="devis">Devis seulement</option>
+//                         <option value="invoices">Factures seulement</option>
+//                     </select>
+//                     <select id="invoice-status-filter" onchange="financeManager.filterInvoicesByStatus(this.value)">
+//                         <option value="">Tous les statuts</option>
+//                         <option value="pending">En attente</option>
+//                         <option value="partial">Partiellement payé</option>
+//                         <option value="paid">Payé</option>
+//                         <option value="overdue">En retard</option>
+//                     </select>
+//                 </div>
+//             </div>
+//             
+//             <div class="invoices-content">
+//                 <!-- Devis Section -->
+//                 <div class="documents-section">
+//                     <h3><i class="fas fa-file-invoice"></i> Devis</h3>
+//                     <div class="devis-grid">
+//                         ${this.renderDevisCards()}
+//                     </div>
+//                 </div>
+//                 
+//                 <!-- Invoices Section -->
+//                 <div class="documents-section">
+//                     <h3><i class="fas fa-file-invoice-dollar"></i> Factures</h3>
+//                     <div class="invoices-table-container">
+//                         <table class="invoices-table" id="invoices-table">
+//                             <thead>
+//                                 <tr>
+//                                     <th>Numéro</th>
+//                                     <th>Patient</th>
+//                                     <th>Date</th>
+//                                     <th>Montant Total</th>
+//                                     <th>LAMal</th>
+//                                     <th>Patient</th>
+//                                     <th>Statut</th>
+//                                     <th>Actions</th>
+//                                 </tr>
+//                             </thead>
+//                             <tbody id="invoices-tbody">
+//                                 ${this.renderInvoicesRows()}
+//                             </tbody>
+//                         </table>
+//                     </div>
+//                 </div>
+//             </div>
+//         `;
+//         
+//         // Setup search functionality
+//         const searchInput = document.getElementById('invoice-search');
+//         if (searchInput) {
+//             searchInput.addEventListener('input', (e) => {
+//                 this.searchInvoices(e.target.value);
+//             });
+//         }
+//     }
+// 
+//     renderDevisCards() {
+//         if (!this.devis || this.devis.length === 0) {
+//             return '<div class="empty-state">Aucun devis trouvé</div>';
+//         }
+// 
+//         return this.devis.map(devis => `
+//             <div class="devis-card" data-status="${devis.status}">
+//                 <div class="devis-header">
+//                     <div class="devis-number">${devis.devis_number}</div>
+//                     <div class="devis-status status-badge ${devis.status}">
+//                         ${this.getDevisStatusText(devis.status)}
+//                     </div>
+//                 </div>
+//                 <div class="devis-info">
+//                     <p><strong>Patient:</strong> ${devis.patient_name}</p>
+//                     <p><strong>Date:</strong> ${new Date(devis.issue_date).toLocaleDateString('fr-FR')}</p>
+//                     <p><strong>Valide jusqu'au:</strong> ${new Date(devis.validity_date).toLocaleDateString('fr-FR')}</p>
+//                     <p><strong>Montant:</strong> ${devis.total_amount.toFixed(2)} CHF</p>
+//                 </div>
+//                 <div class="devis-actions">
+//                     <button class="btn btn-sm btn-primary" onclick="window.dentalAI.showDevisDetails('${devis.id}')">
+//                         <i class="fas fa-eye"></i> Voir
+//                     </button>
+//                     <button class="btn btn-sm btn-secondary" onclick="financeManager.downloadDevis('${devis.id}')">
+//                         <i class="fas fa-download"></i> PDF
+//                     </button>
+//                     ${devis.status === 'approved' ? `
+//                         <button class="btn btn-sm btn-success" onclick="window.dentalAI.createInvoiceFromDevis('${devis.id}')">
+//                             <i class="fas fa-file-invoice-dollar"></i> Facturer
+//                         </button>
+//                     ` : ''}
+//                     <button class="btn btn-sm btn-danger" onclick="window.dentalAI.deleteDevis('${devis.id}')">
+//                         <i class="fas fa-trash"></i> Supprimer
+//                     </button>
+//                 </div>
+//             </div>
+//         `).join('');
+//     }
+// 
+//     renderInvoicesRows() {
+//         if (!this.invoices || this.invoices.length === 0) {
+//             return '<tr><td colspan="8" class="empty-state">Aucune facture trouvée</td></tr>';
+//         }
+// 
+//         return this.invoices.map(invoice => `
+//             <tr>
+//                 <td>${invoice.invoice_number}</td>
+//                 <td>${invoice.patient_name}</td>
+//                 <td>${this.formatDate(invoice.issue_date)}</td>
+//                 <td class="price-amount">${invoice.total_amount.toFixed(2)} CHF</td>
+//                 <td class="price-amount">0.00 CHF</td>
+//                 <td class="price-amount">${invoice.total_amount.toFixed(2)} CHF</td>
+//                 <td><span class="invoice-status ${invoice.status}">${this.getStatusText(invoice.status)}</span></td>
+//                 <td>
+//                     <button class="btn btn-sm btn-secondary" onclick="financeManager.viewInvoice('${invoice.id}')">
+//                         <i class="fas fa-eye"></i>
+//                     </button>
+//                     <button class="btn btn-sm btn-info" onclick="financeManager.downloadInvoice('${invoice.id}')">
+//                         <i class="fas fa-download"></i>
+//                     </button>
+//                     ${invoice.status !== 'paid' ? `
+//                         <button class="btn btn-sm btn-primary" onclick="financeManager.addPayment('${invoice.id}')">
+//                             <i class="fas fa-plus"></i>
+//                         </button>
+//                     ` : ''}
+//                     <button class="btn btn-sm btn-danger" onclick="window.dentalAI.deleteInvoice('${invoice.id}')">
+//                         <i class="fas fa-trash"></i>
+//                     </button>
+//                 </td>
+//             </tr>
+//         `).join('');
+//     }
+// 
+//     getDevisStatusText(status) {
+//         const statusMap = {
+//             'pending': 'En attente',
+//             'approved': 'Approuvé',
+//             'rejected': 'Rejeté',
+//             'invoiced': 'Facturé'
+//         };
+//         return statusMap[status] || status;
+//     }
+// 
+//     filterByDocumentType(type) {
+//         const devisSection = document.querySelector('.devis-grid').closest('.documents-section');
+//         const invoicesSection = document.querySelector('.invoices-table-container').closest('.documents-section');
+//         
+//         if (type === 'devis') {
+//             devisSection.style.display = 'block';
+//             invoicesSection.style.display = 'none';
+//         } else if (type === 'invoices') {
+//             devisSection.style.display = 'none';
+//             invoicesSection.style.display = 'block';
+//         } else {
+//             devisSection.style.display = 'block';
+//             invoicesSection.style.display = 'block';
+//         }
+//     }
+// 
+//     async downloadDevis(devisId) {
+//         // Use the existing downloadDevis function from dentalAI
+//         if (window.dentalAI && typeof window.dentalAI.downloadDevis === 'function') {
+//             window.dentalAI.downloadDevis(devisId);
+//         } else {
+//             this.showNotification('Erreur: Fonction non disponible', 'error');
+//         }
+//     }
+// 
+//     async downloadInvoice(invoiceId) {
+//         // Use the existing downloadInvoice function from dentalAI
+//         if (window.dentalAI && typeof window.dentalAI.downloadInvoice === 'function') {
+//             window.dentalAI.downloadInvoice(invoiceId);
+//         } else {
+//             this.showNotification('Erreur: Fonction non disponible', 'error');
+//         }
+//     }
+// 
+//     async loadPricing() {
+//         try {
+//             const response = await fetch('/api/financial/pricing');
+//             const data = await response.json();
+//             
+//             if (data.status === 'success') {
+//                 this.pricing = data.pricing;
+//                 this.renderPricing();
+//             } else {
+//                 throw new Error(data.message);
+//             }
+//         } catch (error) {
+//             console.error('Error loading pricing:', error);
+//             this.showNotification('Erreur lors du chargement des tarifs', 'error');
+//         }
+//     }
+// 
+//     renderPricing() {
+//         const tbody = document.getElementById('pricing-tbody');
+//         if (!tbody) return;
+// 
+//         tbody.innerHTML = this.pricing.map(item => `
+//             <tr>
+//                 <td><strong>${item.tarmed_code}</strong></td>
+//                 <td>${item.description_fr}</td>
+//                 <td><span class="pricing-category">${item.category || 'Non catégorisé'}</span></td>
+//                 <td class="price-amount">${item.base_price.toFixed(2)} CHF</td>
+//                 <td class="lamal-not-covered">Non</td>
+//                 <td>-</td>
+//                 <td>-</td>
+//                 <td>${item.unit || ''}</td>
+//             </tr>
+//         `).join('');
+//     }
+// 
+//     searchPricing(term) {
+//         const filteredPricing = this.pricing.filter(item => 
+//             item.description_fr.toLowerCase().includes(term.toLowerCase()) ||
+//             item.tarmed_code.toLowerCase().includes(term.toLowerCase()) ||
+//             (item.category && item.category.toLowerCase().includes(term.toLowerCase()))
+//         );
+//         
+//         this.renderFilteredPricing(filteredPricing);
+//     }
+// 
+//     filterPricingByCategory(category) {
+//         const filteredPricing = category ? 
+//             this.pricing.filter(item => item.category === category) : 
+//             this.pricing;
+//         
+//         this.renderFilteredPricing(filteredPricing);
+//     }
+// 
+//     renderFilteredPricing(filteredPricing) {
+//         const tbody = document.getElementById('pricing-tbody');
+//         if (!tbody) return;
+// 
+//         tbody.innerHTML = filteredPricing.map(item => `
+//             <tr>
+//                 <td><strong>${item.tarmed_code}</strong></td>
+//                 <td>${item.description_fr}</td>
+//                 <td><span class="pricing-category">${item.category || 'Non catégorisé'}</span></td>
+//                 <td class="price-amount">${item.base_price.toFixed(2)} CHF</td>
+//                 <td class="lamal-not-covered">Non</td>
+//                 <td>-</td>
+//                 <td>-</td>
+//                 <td>${item.unit || ''}</td>
+//             </tr>
+//         `).join('');
+//     }
+// 
+//     searchInvoices(term) {
+//         const filteredInvoices = this.invoices.filter(invoice => 
+//             invoice.invoice_number.toLowerCase().includes(term.toLowerCase()) ||
+//             invoice.patient_name.toLowerCase().includes(term.toLowerCase())
+//         );
+//         
+//         this.renderFilteredInvoices(filteredInvoices);
+//     }
+// 
+//     filterInvoicesByStatus(status) {
+//         const filteredInvoices = status ? 
+//             this.invoices.filter(invoice => invoice.status === status) : 
+//             this.invoices;
+//         
+//         this.renderFilteredInvoices(filteredInvoices);
+//     }
+// 
+//     renderFilteredInvoices(filteredInvoices) {
+//         const tbody = document.getElementById('invoices-tbody');
+//         if (!tbody) return;
+// 
+//         tbody.innerHTML = filteredInvoices.map(invoice => `
+//             <tr>
+//                 <td>${invoice.invoice_number}</td>
+//                 <td>${invoice.patient_name}</td>
+//                 <td>${this.formatDate(invoice.invoice_date)}</td>
+//                 <td class="price-amount">${invoice.total_amount_chf.toFixed(2)} CHF</td>
+//                 <td class="price-amount">${invoice.lamal_amount_chf.toFixed(2)} CHF</td>
+//                 <td class="price-amount">${invoice.patient_amount_chf.toFixed(2)} CHF</td>
+//                 <td><span class="invoice-status ${invoice.status}">${this.getStatusText(invoice.status)}</span></td>
+//                 <td>
+//                     <button class="btn btn-sm btn-secondary" onclick="financeManager.viewInvoice('${invoice.id}')">
+//                         <i class="fas fa-eye"></i>
+//                     </button>
+//                     <button class="btn btn-sm btn-primary" onclick="financeManager.addPayment('${invoice.id}')">
+//                         <i class="fas fa-plus"></i>
+//                     </button>
+//                 </td>
+//             </tr>
+//         `).join('');
+//     }
+// 
+//     getStatusText(status) {
+//         switch (status) {
+//             case 'pending': return 'En attente';
+//             case 'partial': return 'Partiellement payé';
+//             case 'paid': return 'Payé';
+//             default: return status;
+//         }
+//     }
+// 
+//     formatDate(dateString) {
+//         const date = new Date(dateString);
+//         return date.toLocaleDateString('fr-CH');
+//     }
+// 
+//     showNotification(message, type = 'info') {
+//         // Remove existing notifications
+//         const existingNotifications = document.querySelectorAll('.notification');
+//         existingNotifications.forEach(notif => notif.remove());
+//         
+//         // Create new notification
+//         const notification = document.createElement('div');
+//         notification.className = `notification ${type}`;
+//         notification.textContent = message;
+//         
+//         // Add to document
+//         document.body.appendChild(notification);
+// 
+//         // Auto-remove after 5 seconds
+//         setTimeout(() => {
+//             if (notification.parentNode) {
+//                 notification.style.animation = 'slideOut 0.3s ease';
+//                 setTimeout(() => notification.remove(), 300);
+//             }
+//         }, 5000);
+//     }
+// 
+//     viewInvoice(invoiceId) {
+//         // Use the existing showInvoiceDetails function from dentalAI
+//         if (window.dentalAI && typeof window.dentalAI.showInvoiceDetails === 'function') {
+//             window.dentalAI.showInvoiceDetails(invoiceId);
+//         } else {
+//             this.showNotification('Erreur: Fonction non disponible', 'error');
+//         }
+//     }
+// 
+//     addPayment(invoiceId) {
+//         // Use the existing addPaymentToInvoice function from dentalAI
+//         if (window.dentalAI && typeof window.dentalAI.addPaymentToInvoice === 'function') {
+//             window.dentalAI.addPaymentToInvoice(invoiceId);
+//         } else {
+//             this.showNotification('Fonctionnalité de paiement à implémenter', 'info');
+//         }
+//     }
+// 
+//     showCreateInvoiceModal() {
+//         // TODO: Implement invoice creation modal
+//         console.log('Create new invoice');
+//     }
+// 
+//     async deleteDevis(devisId) {
+//         if (!confirm('Êtes-vous sûr de vouloir supprimer ce devis ? Cette action est irréversible.')) {
+//             return;
+//         }
+// 
+//         try {
+//             const response = await fetch(`/api/devis/${devisId}`, {
+//                 method: 'DELETE'
+//             });
+// 
+//             const data = await response.json();
+//             
+//             if (data.success) {
+//                 this.showNotification('Devis supprimé avec succès', 'success');
+//                 
+//                 // Refresh the current view
+//                 if (window.financeManager) {
+//                     window.financeManager.loadInvoices();
+//                 }
+//                 
+//                 // Refresh patient view if open
+//                 const patientModal = document.querySelector('.modal.active');
+//                 if (patientModal) {
+//                     const patientId = patientModal.dataset.patientId;
+//                     if (patientId) {
+//                         this.loadPatientDevis(patientId);
+//                     }
+//                 }
+//             } else {
+//                 this.showNotification(data.error || 'Erreur lors de la suppression', 'error');
+//             }
+//         } catch (error) {
+//             console.error('Error deleting devis:', error);
+//             this.showNotification('Erreur lors de la suppression du devis', 'error');
+//         }
+//     }
+// 
+//     async deleteInvoice(invoiceId) {
+//         if (!confirm('Êtes-vous sûr de vouloir supprimer cette facture ? Cette action est irréversible.')) {
+//             return;
+//         }
+// 
+//         try {
+//             const response = await fetch(`/api/invoices/${invoiceId}`, {
+//                 method: 'DELETE'
+//             });
+// 
+//             const data = await response.json();
+//             
+//             if (data.success) {
+//                 this.showNotification('Facture supprimée avec succès', 'success');
+//                 
+//                 // Refresh the current view
+//                 if (window.financeManager) {
+//                     window.financeManager.loadInvoices();
+//                 }
+//                 
+//                 // Refresh patient view if open
+//                 const patientModal = document.querySelector('.modal.active');
+//                 if (patientModal) {
+//                     const patientId = patientModal.dataset.patientId;
+//                     if (patientId) {
+//                         this.loadPatientInvoices(patientId);
+//                     }
+//                 }
+//             } else {
+//                 this.showNotification(data.error || 'Erreur lors de la suppression', 'error');
+//             }
+//         } catch (error) {
+//             console.error('Error deleting invoice:', error);
+//             this.showNotification('Erreur lors de la suppression de la facture', 'error');
+//         }
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize main dental AI suite
     window.dentalAI = new DentalAISuite();
     
-    // Initialize practice manager
-    window.practiceManager = new PracticeManager();
+    // Initialize practice manager (only if not using modular version)
+    if (!window.DISABLE_OLD_PRACTICE_MANAGER) {
+        window.practiceManager = new PracticeManager();
+    }
     
-    // Initialize finance manager
-    window.financeManager = new FinanceManager();
+    // Initialize finance manager (only if not using modular version)
+    if (!window.DISABLE_OLD_FINANCE_MANAGER) {
+        window.financeManager = new FinanceManager();
+    }
     
     console.log('✅ Dental AI Suite initialized');
 });
 
 // Global Dental Schema Functions (called from HTML)
 function setTreatmentExample(text) {
-    if (window.practiceManager && typeof window.practiceManager.setTreatmentExample === 'function') {
-        window.practiceManager.setTreatmentExample(text);
+    // Set example text in the dental brain input
+    const dentalBrainInput = document.getElementById('chat-input-dental-brain');
+    if (dentalBrainInput) {
+        dentalBrainInput.value = text;
+        dentalBrainInput.focus();
     }
 }
 
 function processTreatmentPlan() {
-    if (window.practiceManager && typeof window.practiceManager.processTreatmentPlan === 'function') {
-        window.practiceManager.processTreatmentPlan();
+    // Trigger treatment plan processing in the dental brain
+    if (window.dentalAI && typeof window.dentalAI.sendMessage === 'function') {
+        window.dentalAI.sendMessage('dental-brain');
     }
 }
