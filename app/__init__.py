@@ -4,6 +4,7 @@ from flask import Flask
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from whitenoise import WhiteNoise
 
 from app.config import config
 
@@ -25,6 +26,10 @@ def create_app(config_name=None):
     db.init_app(app)
     migrate.init_app(app, db)
     CORS(app)
+    
+    # Add WhiteNoise for static files in production
+    if config_name == 'production':
+        app.wsgi_app = WhiteNoise(app.wsgi_app, root='static/')
     
     # Configure logging
     if not app.debug and not app.testing:

@@ -1,28 +1,26 @@
+databases:
+  - name: dental-app-db
+    databaseName: dental_app
+    user: dental_app
+    plan: starter
+
 services:
   - type: web
     name: dental-app
-    runtime: python3
-    # Option 1: Gunicorn (Recommended for production)
-    # startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
-    # Option 2: Simple Python3 (Alternative - less robust)
-    startCommand: python3 app.py
+    runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
-    autoDeploy: true
-    env:
-      - key: FLASK_ENV
-        value: production
-      - key: RENDER
-        value: "true"
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn run:app"
+    envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: dental-db
+          name: dental-app-db
           property: connectionString
+      - key: FLASK_CONFIG
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SECRET_KEY
+        generateValue: true
       - key: OPENAI_API_KEY
-        sync: false  # You'll set this manually in Render dashboard
-
-  - type: pgsql
-    name: dental-db
-    databaseName: dental_practice
-    user: dental_user
-    plan: starter 
+        sync: false

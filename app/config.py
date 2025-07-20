@@ -9,7 +9,10 @@ class Config:
     
     # Database
     DATABASE_URL = os.environ.get('DATABASE_URL')
-    SQLALCHEMY_DATABASE_URI = DATABASE_URL if DATABASE_URL else 'sqlite:///practice.db'
+    # Handle Render's postgres:// to postgresql:// conversion
+    if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL if DATABASE_URL else 'sqlite:///dental_app.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Application settings
